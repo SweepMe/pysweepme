@@ -40,7 +40,7 @@ _config = ConfigParser()
 class EmptyDevice(Dispatcher):
     _events_= ['Log', 'messageInfo', 'messageBox']
     
-    actions = []
+    actions = [] # static variable that can be used in a driver to define a list of function names that can be used as action
 
     def __init__(self):
     
@@ -67,7 +67,7 @@ class EmptyDevice(Dispatcher):
         
         # deprecated, remains for compatibility reasons
         # one should always ask the FolderManager regarding the actual path
-        self.tempfolder = self.get_Folder("TEMP")
+        self.tempfolder = self.get_folder("TEMP")
     
 
         self._parameters = {}
@@ -77,7 +77,19 @@ class EmptyDevice(Dispatcher):
         ## Otherwise, the object is handed over by the module during create_Device
         ## The ParameterStore can then be used to store and restore some parameters after re-instantiating.
         self._ParameterStore = {} 
+        
+
+    def list_functions(self):
+        """\
+        returns a list of all function names that are individually defined by the driver, e.g. get/set functions
+        
+        These functions can be be used in python projects when using pysweepme to directly access instrument properties.
+        """
+    
+        all_functions = [func for func in dir(self) if callable(getattr(self, func)) and not func.startswith("_")]
+        empty_device_functions =  [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
        
+        return list(set(all_functions) - set(empty_device_functions))
         
     def store_parameter(self, key, value):
         """ stores a value in the ParameterStore for a given key """
@@ -122,7 +134,7 @@ class EmptyDevice(Dispatcher):
             return []
             
     def get_configsections(self):
-        return self.get_getConfigSections()
+        return self.getConfigSections()
             
             
     def getConfigOptions(self, section):
@@ -330,7 +342,7 @@ class EmptyDevice(Dispatcher):
         # pass
         
     def stop_Measurement(self, text):
-        """ sets flag to stop a measurement, not supported in pysweepme standalone """
+        """ command is deprecated, use 'stop_measurement' instead """
     
         self.stopMeasurement = text
         return False
@@ -342,7 +354,7 @@ class EmptyDevice(Dispatcher):
         return False
         
     def write_Log(self, msg):
-        """ write to logbook file """
+        """ command is deprecated, use 'write_log' instead """
         
         self.emit('Log', msg=msg)
         
@@ -352,7 +364,7 @@ class EmptyDevice(Dispatcher):
         self.emit('Log', msg=msg)   
         
     def message_Info(self, msg):
-        """ write to info box, not supported in pysweepme standalone """
+        """ command is deprecated, use 'message_info' instead """
         
         self.emit('messageInfo', msg=msg)
         
@@ -362,7 +374,7 @@ class EmptyDevice(Dispatcher):
         self.emit('messageInfo', msg=msg)
         
     def message_Box(self, msg):
-        """ creates a message box with given message, not supported in pysweepme standalone """
+        """ command is deprecated, use 'message_box' instead """
     
         self.emit('messageBox', msg=msg)
         
@@ -372,7 +384,7 @@ class EmptyDevice(Dispatcher):
         self.emit('messageBox', msg=msg)
         
         
-    """  convenience function  """    
+    """  convenience functions  """    
         
         
     def get_variables(self):
@@ -396,7 +408,7 @@ class EmptyDevice(Dispatcher):
         self.value = value
  
     def apply_value(self, value):
-        """ convenience function for use to apply a value, mainly for use with pysweepme """
+        """ convenience function for user to apply a value, mainly for use with pysweepme """
         self.value = value
         
         if hasattr(self, "apply"):
@@ -415,7 +427,10 @@ class EmptyDevice(Dispatcher):
         
         
     def read(self):
-        """ returns a list of values according to functions 'get_variables' and 'get_units' """
+        """\
+        returns a list of values according to functions 'get_variables' and 'get_units'
+        convenience function for pysweepme to quickly retrieve values by calling several semantic standard functions
+        """
         
         self.adapt()
         self.adapt_ready()

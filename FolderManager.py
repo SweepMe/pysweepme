@@ -176,6 +176,12 @@ def set_file(identifier, path):
     if identifier in FoMa.files:
         return FoMa.set_file(identifier, path)
 
+# remains for compatibility 
+def main_is_frozen():
+    return is_main_frozen()
+    
+def is_main_frozen():
+    return hasattr(sys, "frozen")
     
 class FolderManager(object):
 
@@ -423,6 +429,8 @@ class FolderManager(object):
         
         if identifier in self.folders:
             self.folders[identifier] = path
+        else:
+            debug("FolderManager: identifier '%s' unknown to set path" % identifier)
             
     def get_file(self, identifier):
     
@@ -441,6 +449,8 @@ class FolderManager(object):
                 
         if identifier in self.files:
             self.files[identifier] = path
+        else:
+            debug("FolderManager: identifier '%s' unknown to set file" % identifier)
             
         # print()
         # print("set_file")
@@ -455,5 +465,8 @@ class FolderManager(object):
         return os.getcwd()
 
     def main_is_frozen(self):
+        return self.is_main_frozen()
+        
+    def is_main_frozen(self):
         return hasattr(sys, "frozen")
         

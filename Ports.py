@@ -23,7 +23,8 @@
 
 import time
 from .ErrorMessage import error, debug
-import subprocess  # needed for TCPIP to find IP addresses
+import subprocess # needed for TCPIP to find IP addresses
+
 
 try:
     import serial
@@ -34,18 +35,19 @@ except:
 
 try:
     import pyvisa
-    import visa  # needed to make sure that DeviceClasses using 'import visa' work
 except:
     pass
     
 def get_debug_info():
     return pyvisa.util.get_debug_info(to_screen=False)
 
+
 def get_porttypes():
     """ returns a list of all supported port types """ 
 
     return list(port_types.keys())
 
+        
 def get_resources(keys):
     """ returns all resource strings for the given list of port type string """ 
 
@@ -80,7 +82,7 @@ def open_resourcemanager(visafile_path = ""):
               
     else:
         try:
-            rm = pyvisa.ResourceManager(visafile_path)
+            rm = pyvisa.ResourceManager(visafile_path) 
         except:
             error("Creating resource manager from visa dll file '%s' failed." % visafile_path)
 
@@ -109,6 +111,7 @@ def get_resourcemanager():
     # if rm is closed, we have to renew the resource manager
     # to finally return a useful object
 
+
     global rm
     
     try:
@@ -127,7 +130,8 @@ def get_resourcemanager():
     # print("get visalib", rm.visalib)
  
     return rm
-
+        
+    
 def is_resourcemanager():
     """ check whether there is a resource manager instance """
 
@@ -135,29 +139,69 @@ def is_resourcemanager():
         return True
     else:
         return False
-
+    
+    
 def get_port(ID, properties={}):
     """returns an open port object for the given ID and port properties"""
+                         
+    if ID.startswith("GPIB"):
+                    
+        try:
+            port = GPIBport(ID)
+        except:
+            error("Ports: Cannot create GPIB port object for %s" % ID)
+            return False
+           
+    elif ID.startswith("PXI"):  # todo: Prologix can be removed here, if ID does not start with Prologix anymore
+                    
+        try:
+            port = PXIport(ID)
+        except:
+            error("Ports: Cannot create PXI port object for %s" % ID)
+            return False       
+            
+    elif ID.startswith("ASRL"):
+                    
+        try:
+            port = ASRLport(ID)
+        except:
+            error("Ports: Cannot create ASRL port object for %s" % ID)
+            return False
+                   
+ 
+    elif ID.startswith("TCPIP"):
+            
+        try:
+            port = TCPIPport(ID)
+        except:
+            error("Ports: Cannot create TCPIP port object for %s" % ID)
+            return False
+         
+    elif ID.startswith("COM"):
+        
+        try:
+            port = COMport(ID)
+        except:
+            error("Ports: Cannot create COM port object for %s" % ID)
+            return False         
+    
+    elif ID.startswith("USB") or ID.startswith("USBTMC"):
 
-    port = None
+        try:
+            port = USBTMCport(ID)
+        except:
+            error("Ports: Cannot create USBTMC port object for %s" % ID)
+            return False  
 
-    for key in _ports:
-        if ID.startswith(key):
-            try:
-                port = _ports[key](ID)
-            except:
-                error("Ports: Cannot create %s port object for %s" % (key, ID))
-                return False
-
-            break
-
-    if not port:
+    else:
         error("Ports: Cannot create port object for %s as port type is not defined." % ID)
         return False  
+            
 
     # make sure the initial parameters are set
     port.initialize_port_properties()
-
+                    
+        
     # here default properties are overwritten by specifications given in the DeviceClass
     # only overwrite by the DeviceClass which opens the port to allow to alter the properties further in open()
     port.port_properties.update(properties)             
@@ -171,7 +215,9 @@ def get_port(ID, properties={}):
     # print(port.port_properties)    
         
     return port
+        
 
+    
 def close_port(port): 
     """close the given port object"""
     # port is checked if being open and if so port is closed    
@@ -248,6 +294,8 @@ class COM(PortType):
                     
     def __init__(self):
         super().__init__()
+        
+
 
     def find_resources_internal(self):
     
@@ -267,10 +315,11 @@ class COM(PortType):
                     resources.append(ID)
                 
         except:
-            error("Error during finding COM ports.")
+            error("Error during findind COM ports.")                                        
         
         return resources
-
+        
+                
         
 class GPIB(PortType):
 
@@ -397,7 +446,8 @@ class TCPIP(PortType):
 
     def __init__(self):
         super().__init__()
-
+        
+            
     def find_resources_internal(self):
     
         resources = []
@@ -466,6 +516,7 @@ class TCPIP(PortType):
                 
         # print(resources)            
         return resources
+        
 
         
         """
@@ -477,7 +528,9 @@ class TCPIP(PortType):
         -> Raw TCP/IP access to port 999 at the specified IP address.
         """
 
-
+    
+        
+        
 class Port(object):
     """ base class for any port """
     
@@ -528,9 +581,11 @@ class Port(object):
         
     def get_logging(self, state):
         return self.port_properties["debug"]
-
+        
+        
     def get_identification(self):
         return "not available"
+
 
     def open(self):
               
@@ -538,7 +593,7 @@ class Port(object):
 
         self.port_properties["open"] = True
         
-    def open_internal(self):
+    def open_internal():
         pass
         
     def close(self):  
@@ -548,14 +603,6 @@ class Port(object):
         self.port_properties["open"] = False
         
     def close_internal(self):
-        pass
-
-    def clear(self):
-        """ clears the port, can be have different meaning depending on each port"""
-        self.clear_internal()
-
-    def clear_internal(self):
-        """ function to be overwritten by each port to device what is done during clear"""
         pass
         
     def write(self, cmd):
@@ -581,7 +628,7 @@ class Port(object):
         # if this function is not overwritten, it defines a fallback to write()
         self.write(cmd)
         
-    def read(self, digits=0):
+    def read(self, digits = 0):
         """ read a command from a port"""
     
         answer = self.read_internal(digits)
@@ -599,10 +646,11 @@ class Port(object):
 
         return answer
         
-    def read_internal(self, digits):
+    def read_internal(digits):
         # has to be overwritten by each Port
         return ""
-
+        
+    
     def read_raw(self, digits = 0):
         """ write a command via a port without encoding"""
         
@@ -618,7 +666,8 @@ class GPIBport(Port):
     def __init__(self, ID):
         
         super(__class__,self).__init__(ID)
-
+                                    
+                                    
     def open_internal(self):
   
         ## differentiate between visa GPIB and prologix_controller
@@ -639,24 +688,29 @@ class GPIBport(Port):
 
             self.port = rm.open_resource(self.port_properties["ID"])
             self.port.timeout = self.port_properties["timeout"]*1000 # must be in ms now
-
+            
+            
             if self.port_properties["GPIB_EOLwrite"] != None:
                 self.port.write_termination = self.port_properties["GPIB_EOLwrite"]
                 
             if self.port_properties["GPIB_EOLread"] != None:
                 self.port.read_termination = self.port_properties["GPIB_EOLread"]
+                
+            self.port.clear()
 
+        
     def close_internal(self):
-        self.port.close()
-
-    def clear_internal(self):
+    
         self.port.clear()
+        self.port.close()
+        
         
     def get_identification(self):
         
         self.write("*IDN?")
         return self.read()
-
+        
+        
     def write_internal(self, cmd):
 
         while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
@@ -669,7 +723,8 @@ class GPIBport(Port):
             self.port.write(cmd)
         
         self.actualwritetime = time.perf_counter()
-
+        
+        
     def read_internal(self, digits = 0):
              
         if "Prologix" in self.port_properties["ID"]:
@@ -694,12 +749,15 @@ class PXIport(Port):
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"]*1000 # must be in ms now
-
-    def close_internal(self):
-        self.port.close()
-
-    def clear_internal(self):
+                    
         self.port.clear()
+
+        
+    def close_internal(self):
+    
+        self.port.clear()
+        self.port.close()
+        
         
     def get_identification(self):
         
@@ -769,14 +827,11 @@ class ASRLport(Port):
         # self.port.flow_control = self.parities[str(self.port_properties["parity"])]
         self.port.clear()
 
+        
     def close_internal(self):  
-
         self.port.clear()
         self.port.close()
         self.port_properties["open"] = False
-
-    def clear_internal(self):
-        self.port.clear()
         
     def write_internal(self, cmd):
                     
@@ -803,23 +858,24 @@ class USBTMCport(Port):
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"]*1000 # must be in ms now
+        self.port.clear()
                 
     def close_internal(self):  
-
-        self.port.close()
-
-    def clear_internal(self):
-
+    
         self.port.clear()
-
+        self.port.close()
+        
+        
     def get_identification(self):
         
         self.write("*IDN?")
         return self.read()
+        
 
     def write_internal(self, cmd):
             
         self.port.write(cmd)
+                    
 
     def read_internal(self, digits = 0):
 
@@ -833,6 +889,7 @@ class TCPIPport(Port):
         
         super(__class__,self).__init__(ID)
 
+        
     def open_internal(self):
     
         if get_resourcemanager() ==  False:
@@ -840,12 +897,11 @@ class TCPIPport(Port):
     
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"]*1000 # must be in ms now
-            
-    def close_internal(self):
-        self.port.close()
-
-    def clear_internal(self):
         self.port.clear()
+            
+    def close_internal(self):  
+        self.port.clear()
+        self.port.close()        
         
     def get_identification(self):
         
@@ -916,20 +972,19 @@ class COMport(Port):
         else:
             self.port.close()
             self.port.open()
-
-        self.port.reset_input_buffer()
-        self.port.reset_output_buffer()
-
-    def close_internal(self):    
-        self.port.close()
-        self.port_properties["open"] = False
-
-    def clear_internal(self):
+            
+ 
         self.port.reset_input_buffer()
         self.port.reset_output_buffer()
         
+        
+    def close_internal(self):    
+        self.port.close()
+        self.port_properties["open"] = False
+        
     def write_internal(self, cmd):
-
+        
+        
         while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
             time.sleep(0.01)
                             
@@ -951,7 +1006,8 @@ class COMport(Port):
         self.port.write(cmd_bytes)
             
         self.actualwritetime = time.perf_counter() 
-
+        
+            
     def read_internal(self, digits = 0):
                 
         if digits == 0:
@@ -963,6 +1019,7 @@ class COMport(Port):
                 except:
                     error("Unable to decode the reading from %s. Please check whether the baudrate and the terminator are correct (Ports -> PortManager -> COM). You can get the raw reading by setting the key 'raw_read' of self.port_properties to True" % (self.port_properties["ID"]))
                     raise
+                    
         else:
             answer = self.port.read(digits)
             
@@ -978,7 +1035,7 @@ class COMport(Port):
         if answer == "" and not EOLfound and self.port_properties["Exception"] == True:
             self.close()
             raise Exception('Port \'%s\' with ID \'%s\' does not respond.\nCheck port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM' % (self.port_properties["type"],self.port_properties["ID"]) )
-                    
+
         return answer
         
     def write_raw_internal(self, cmd):
@@ -996,6 +1053,7 @@ class COMport(Port):
         self.port_properties["raw_read"] = current
 
         return answer
+                
 
     def in_waiting(self):
         return self.port.in_waiting
@@ -1246,25 +1304,21 @@ def get_prologix_controllers():
 prologix_controller = {}
 # add_prologix_controller("COM23")
 
+        
 rm = open_resourcemanager()
 
+    
 port_types = {
              "COM" : COM(),
+             # "MODBUS": MODBUS(),
              "GPIB": GPIB(),
              "PXI": PXI(),
              # "ASRL": ASRL(), # Serial communication via visa runtime, just used for testing at the moment
              "USBTMC": USBTMC(),
              "TCPIP": TCPIP(),
+             # "VB": VirtualBench(), # no longer supported as finding ports can be done in Device Class / Driver
              }
-
-_ports = {
-    "COM": COMport,
-    "GPIB": GPIBport,
-    "PXI": PXIport,
-    "USBTMC": USBTMCport,
-    "USB": USBTMCport,
-    "TCPIP": TCPIPport,
-}
              
 
+        
 """ """
