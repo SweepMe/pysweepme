@@ -66,6 +66,6 @@ def get_driver(name, folder = ".", port = ""):
 
     # function is introduced because of a possible later renaming of DeviceClasses to Drivers
 
-    return self.get_device(name, folder, port)
+    return get_device(name, folder, port)
     
             
