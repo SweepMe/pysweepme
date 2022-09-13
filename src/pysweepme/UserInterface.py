@@ -24,7 +24,7 @@
 def get_input(msg: str) -> str:
     """
     This function can be used by drivers or CustomFunction scripts to ask the user for input. If used with SweepMe!,
-    this function will be overloaded by SweepMe! to create a graphical user interface.
+    this function will be overwritten by SweepMe! to create a graphical user interface.
     
     Args:
         msg: String of the message that is displayed to the user
@@ -35,3 +35,20 @@ def get_input(msg: str) -> str:
     """
 
     return input(msg)
+
+
+def message(msg: str) -> str:
+    """
+    This function can be used by drivers or CustomFunction scripts to show a message to the user. If used with SweepMe!,
+    this function will be overwritten by SweepMe! to create a graphical user interface. Otherwise, it will be just
+    printed to the console. Any application can redefine this function to redirect the message to the user.
+
+    Args:
+        msg: String of the message that is displayed to the user
+
+    Returns:
+        None
+
+    """
+
+    print("Message:", msg)
