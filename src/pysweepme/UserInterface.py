@@ -20,8 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import time
+from pysweepme.FolderManager import FolderManager
 
-def get_input(msg: str) -> str:
+FoMa = FolderManager()
+logbook_path = FoMa.get_file("LOGBOOK")
+
+
+def get_input(msg) -> str:
     """
     This function can be used by drivers or CustomFunction scripts to ask the user for input. If used with SweepMe!,
     this function will be overwritten by SweepMe! to create a graphical user interface.
@@ -34,10 +40,31 @@ def get_input(msg: str) -> str:
 
     """
 
-    return input(msg)
+    return input(str(msg))
 
 
-def message(msg: str) -> str:
+def message_box(msg, blocking: bool = False):
+    """
+    This function can be used by drivers or CustomFunction scripts to show a message to the user. If used with SweepMe!,
+    this function will be overwritten by SweepMe! to create a graphical user interface. Otherwise, it will be just
+    printed to the console. Any application can redefine this function to redirect the message to the user.
+
+    Args:
+        msg: String of the message that is displayed to the user
+
+    Returns:
+        None
+
+    """
+    if blocking:
+        # This makes sure that the use needs to accept the dialog before the measurement continues
+        input(f"Message (confirm with enter): {str(msg)}")
+    else:
+        # The message is just shown with
+        print(f"Message: {str(msg)}")
+
+
+def message_info(msg):
     """
     This function can be used by drivers or CustomFunction scripts to show a message to the user. If used with SweepMe!,
     this function will be overwritten by SweepMe! to create a graphical user interface. Otherwise, it will be just
@@ -51,4 +78,30 @@ def message(msg: str) -> str:
 
     """
 
-    print("Message:", msg)
+    print("Info:", msg)
+
+
+def message_balloon(msg):
+    """
+    This function can be used by drivers or CustomFunction scripts to show a message to the user. If used with SweepMe!,
+    this function will be overwritten by SweepMe! to create a graphical user interface. Otherwise, it will be just
+    printed to the console. Any application can redefine this function to redirect the message to the user.
+
+    Args:
+        msg: String of the message that is displayed to the user
+
+    Returns:
+        None
+
+    """
+
+    print("Balloon message:", msg)
+
+def message_log(msg, logfilepath=None):
+
+    if not logfilepath:
+        logfilepath = logbook_path
+
+    with open(logfilepath, "a") as logfile:
+        year, month, day, hour, min, sec = time.localtime()[:6]
+        logfile.write(("%02d/%02d/%04d %02d:%02d:%02d" % (day, month, year, hour, min, sec) + " - " + str(msg) + "\n"))
