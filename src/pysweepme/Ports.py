@@ -208,6 +208,7 @@ class PortType(object):
                         "timeout": 2,
                         "delay": 0.0,
                         "rstrip": True,
+                        "debug": False,
                 }
 
     def __init__(self):
