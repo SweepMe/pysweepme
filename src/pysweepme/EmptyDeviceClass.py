@@ -29,34 +29,35 @@ from .ErrorMessage import error, debug
 from . import FolderManager
 FoMa = FolderManager.FolderManager()
 
-from pydispatch import Dispatcher
+from pysweepme.UserInterface import message_box, message_info, message_balloon, message_log
 
 from configparser import ConfigParser
-
 
 _config = ConfigParser()
 
 
-class EmptyDevice(Dispatcher):
-    _events_= ['Log', 'messageInfo', 'messageBox']
+class EmptyDevice():
     
     actions = [] # static variable that can be used in a driver to define a list of function names that can be used as action
 
     def __init__(self):
     
-        self.device_communication = {} # here to make sure that it is known, later it is overwritten by SweepMe!
+        self.device_communication = {}  # here to make sure that it is known, later it is overwritten by SweepMe!
         
         self.variables = []
         self.units = []
-        self.plottype = [] # True if plotted
-        self.savetype = [] # True if saved
+        self.plottype = []  # True if plotted
+        self.savetype = []  # True if saved
         
         self.shortname = ""
-        self.idlevalue = None # deprecated, remains for compatibility reasons
-        self.stopvalue = None # deprecated, remains for compatibility reasons
+        self.idlevalue = None  # deprecated, remains for compatibility reasons
+        self.stopvalue = None  # deprecated, remains for compatibility reasons
         
-        self.abort = "" # deprecated, remains for compatibility reasons
-        self.stopMeasurement = ""
+        self.abort = ""  # deprecated, remains for compatibility reasons
+        self.stopMeasurement = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
+
+        # variable that can be overwritten by SweepMe! to indicate that the user requested a stop
+        self._is_run_stopped = False
         
         self.port_manager = False
         self.port_types = []
@@ -68,14 +69,13 @@ class EmptyDevice(Dispatcher):
         # deprecated, remains for compatibility reasons
         # one should always ask the FolderManager regarding the actual path
         self.tempfolder = self.get_folder("TEMP")
-    
 
         self._parameters = {}
         
-        ## ParameterStore 
-        ## needs to be defined here in case the device class is used standalone with pysweepme
-        ## Otherwise, the object is handed over by the module during create_Device
-        ## The ParameterStore can then be used to store and restore some parameters after re-instantiating.
+        # ParameterStore
+        # needs to be defined here in case the device class is used standalone with pysweepme
+        # Otherwise, the object is handed over by the module during create_Device
+        # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
         self._ParameterStore = {} 
         
 
@@ -90,7 +90,7 @@ class EmptyDevice(Dispatcher):
         empty_device_functions =  [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
        
         return list(set(all_functions) - set(empty_device_functions))
-        
+
     def store_parameter(self, key, value):
         """ stores a value in the ParameterStore for a given key """
         self._ParameterStore[key] = value
@@ -101,6 +101,25 @@ class EmptyDevice(Dispatcher):
             return self._ParameterStore[key]
         else:
             return None
+
+    def _on_run(self):
+        """
+        This function is called by SweepMe! at the beginning of the run to indicate the start. Do not overwrite it.
+        """
+        self._is_run_stopped = False
+
+    def _on_stop(self):
+        """
+        This function is called by SweepMe! in case the user requests a stop of the run. Do not overwrite it.
+        """
+        self._is_run_stopped = True
+
+    def is_run_stopped(self):
+        """
+        This function can be used in a driver to figure out whether a stop of the run was requested by the user
+        It is helpful if a driver function is caught in a while-loop.
+        """
+        return self._is_run_stopped
     
     def get_Folder(self, identifier):
         """ easy access to a folder without the need to import the FolderManager """
@@ -112,55 +131,77 @@ class EmptyDevice(Dispatcher):
     def get_folder(self, identifier):
         """ same function like get_Folder but more python style """
         return self.get_Folder(identifier)
-        
-        
+
     def isConfigFile(self):
-    
+        """ deprecated: remains for compatibility reasons"""
+
+        return self.is_configfile()
+            
+    def is_configfile(self):
+        """ this function checks whether a driver related config file exists """
+
         # if config file directory is changed it must also be changed in version manager!
         if os.path.isfile(FoMa.get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini"):
             _config.read(FoMa.get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini")
             return True
         else:
             return False
-            
-    def is_configfile(self):
-        return self.isConfigFile()
-                         
-                         
+
     def getConfigSections(self):
+        """ deprecated: remains for compatibility reasons"""
+
+        return self.get_configsections()
+            
+    def get_configsections(self):
+        """ This function returns all sections of the driver related config file. If not file exists, an empty list
+        is returned.
+
+        Returns:
+            List of Strings
+        """
+
         if self.isConfigFile():
             return _config.sections()
         else:
             return []
-            
-    def get_configsections(self):
-        return self.getConfigSections()
-            
-            
+
     def getConfigOptions(self, section):
+        """ deprecated: remains for compatibility reasons"""
+
+        return self.get_configoptions(section)
+
+    def get_configoptions(self, section):
+        """
+        This functions returns all key-value options of a given section of the driver related config file.
+        If the file does not exist, an empty dictionary is returned.
+
+        Args:
+            section: str, a config file section
+
+        Returns:
+            dict with pairs of key-value options
+        """
+
         vals = {}
         if self.isConfigFile():
             if section in _config:
                 for key in _config[section]:
                     vals[key] = _config[section][key]
         return vals
-        
-    def get_configoptions(self, section):
-        return self.getConfigOptions(section)
-   
-        
+
     def getConfig(self):
-        config = {section : self.getConfigOptions(section) for section in self.getConfigSections()}
-        return config
-        
-        # print(self.isConfigFile())
-        # print(self.getConfigSections())
-        # print(self.getConfigOptions("Filter"))
+        """ deprecated: remains for compatibility reasons"""
+
+        return self.get_config()
         
     def get_config(self):
-        return self.get_config()
-    
-    
+        """ This function returns a representation of the driver related config file by means of a nested dictionary
+        that contains for each section a dictionary with the options
+        """
+
+        config = {section: self.getConfigOptions(section) for section in self.getConfigSections()}
+        return config
+
     def get_GUIparameter(self, parameter):
         """ is overwritten by Device Class to retrieve the GUI parameter selected by the user """
         pass
@@ -195,15 +236,13 @@ class EmptyDevice(Dispatcher):
     def get_parameters(self):
     
         return self._parameters
-                
-        
+
     def set_port(self, port):
         self.port = port
         
     def get_port(self):
         return self.port
-       
-    
+
     ## can be used by device class to be triggered by button find_Ports
     # def find_Ports(self):
         # """ must be overwritten by DeviceClass, returns a list of port strings that can be used """
@@ -342,51 +381,60 @@ class EmptyDevice(Dispatcher):
         # pass
         
     def stop_Measurement(self, text):
-        """ command is deprecated, use 'stop_measurement' instead """
+        """ deprecated: use 'raise Exception(...)' instead
+        sets flag to stop a measurement, not supported in pysweepme standalone """
+
     
         self.stopMeasurement = text
         return False
         
     def stop_measurement(self, text):
-        """ sets flag to stop a measurement, not supported in pysweepme standalone """
+        """ deprecated: use 'raise Exception(...)' instead
+        sets flag to stop a measurement, not supported in pysweepme standalone """
     
         self.stopMeasurement = text
         return False
         
     def write_Log(self, msg):
-        """ command is deprecated, use 'write_log' instead """
-        
-        self.emit('Log', msg=msg)
+        """ deprecated, remains for compatibility reasons """
+        self.message_log(msg)
         
     def write_log(self, msg):
-        """ write to logbook file """
-        
-        self.emit('Log', msg=msg)   
+        """ deprecated, remains for compatibility reasons """
+        self.message_log(msg)
+
+    def message_log(self, msg):
+        """ writes message to logbook file """
+
+        message_log(msg)
         
     def message_Info(self, msg):
         """ command is deprecated, use 'message_info' instead """
-        
-        self.emit('messageInfo', msg=msg)
+
+        self.message_info(msg)
         
     def message_info(self, msg):
-        """ write to info box, not supported in pysweepme standalone """
+        """ write to info box """
     
-        self.emit('messageInfo', msg=msg)
+        message_info(msg)
         
     def message_Box(self, msg):
         """ command is deprecated, use 'message_box' instead """
     
-        self.emit('messageBox', msg=msg)
+        self.message_box(msg)
         
-    def message_box(self, msg):
-        """ creates a message box with given message, not supported in pysweepme standalone """
+    def message_box(self, msg, blocking=False):
+        """ creates a message box with given message """
     
-        self.emit('messageBox', msg=msg)
-        
-        
+        message_box(msg, blocking)
+
+    def message_balloon(self, msg):
+        """ creates a message balloon with given message """
+
+        message_balloon(msg)
+
     """  convenience functions  """    
-        
-        
+
     def get_variables(self):
         """ returns a list of strings being the variable of the Device Class """
         return self.variables
@@ -424,8 +472,7 @@ class EmptyDevice(Dispatcher):
         
         if hasattr(self, 'reach'):
             self.reach()
-        
-        
+
     def read(self):
         """\
         returns a list of values according to functions 'get_variables' and 'get_units'
@@ -442,5 +489,3 @@ class EmptyDevice(Dispatcher):
         result = self.call()
         
         return result
-        
-            
