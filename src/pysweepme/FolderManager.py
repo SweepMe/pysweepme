@@ -61,9 +61,9 @@ def addFolderToPATH(path_to_add = ""):
         sys.path = [libs_path] + sys.path
         
     if not libs_path in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"] 
+        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
         
-    subfolders = [x[0] for x in os.walk(lib_path) if not x[0].endswith('__pycache__')]
+    subfolders = [x[0] for x in os.walk(libs_path) if not x[0].endswith('__pycache__')]
     
     for folder in subfolders:
     
