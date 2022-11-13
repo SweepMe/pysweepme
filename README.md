@@ -11,7 +11,7 @@ Use the command line (cmd) to install/uninstall:
     pip install pysweepme 
 
 ### install with force version
-    pip install pysweepme==1.5.5.46
+    pip install pysweepme==1.5.5.45
 
 ### uninstall
     pip uninstall pysweepme
