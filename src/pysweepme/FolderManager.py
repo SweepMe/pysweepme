@@ -56,10 +56,14 @@ def addFolderToPATH(path_to_add = ""):
         os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"] 
     
     libs_path = main_path + os.sep + "libs"
-    
     if not libs_path in sys.path:
         sys.path = [libs_path] + sys.path
-        
+
+    # add also library.zip in libs
+    if os.path.exists(libs_path + os.sep + "library.zip"):
+        if not libs_path + os.sep + "library.zip" in sys.path:
+            sys.path = [libs_path + os.sep + "library.zip"] + sys.path
+
     if not libs_path in os.environ["PATH"].split(os.pathsep):
         os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
         
