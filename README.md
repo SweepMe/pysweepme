@@ -66,7 +66,6 @@ communication commands, yet.
   * GPIB, USBTMC and TCPIP ports do not use clear() during open and close 
   * Find TCPIP ports only lists ports registered in visa runtime
   * Drivers have method 'is_run_stopped'
-  * FolderManager: 'addFolderToPATH' does not add subfolders of libs folder to sys.path
 * 1.5.5.45 minor fixes
 * 1.5.5.44 bugfix: SweepMe! user data folder is not created like in portable mode if pysweepme is used standalone
 * 1.5.5.33 first release of pysweepme on pypi after release of SweepMe! 1.5.5
