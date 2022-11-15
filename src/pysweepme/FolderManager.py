@@ -36,7 +36,8 @@ TemporaryFolderForPATH = None
 
 FolderManager_initialized = False
 
-def addFolderToPATH(path_to_add = ""):
+
+def addFolderToPATH(path_to_add=""):
     """ used by DeviceClasses and CustomFunctions to add their path to PATH. If no argument is given, the path of the calling file is used."""
 
     if path_to_add != "":
@@ -46,11 +47,8 @@ def addFolderToPATH(path_to_add = ""):
         else:
             return False
     else:
-    
         main_file = inspect.stack()[1][1]    
         main_path = os.path.dirname(os.path.realpath(main_file))
-        
-    # print(main_path)
     
     if not main_path in sys.path:
         sys.path = [main_path] + sys.path
@@ -58,19 +56,25 @@ def addFolderToPATH(path_to_add = ""):
     if not main_path in os.environ["PATH"].split(os.pathsep):
         os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"] 
     
-    subfolders = [x[0] for x in os.walk(main_path) if not x[0].endswith('__pycache__')]  
-    # print(subfolders)
-        
-    # add also library.zip to subdirectories if it exists
-    for folder in subfolders:
-        if os.path.exists(folder + os.sep + "library.zip"):
-            subfolders.append(folder + os.sep + "library.zip")
+    libs_path = main_path + os.sep + "libs"
+    if not libs_path in sys.path:
+        sys.path = [libs_path] + sys.path
 
+    # add also library.zip in libs
+    if os.path.exists(libs_path + os.sep + "library.zip"):
+        if not libs_path + os.sep + "library.zip" in sys.path:
+            sys.path = [libs_path + os.sep + "library.zip"] + sys.path
+
+    if not libs_path in os.environ["PATH"].split(os.pathsep):
+        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
+        
+    subfolders = [x[0] for x in os.walk(libs_path) if not x[0].endswith('__pycache__')]
     
     for folder in subfolders:
-        if not folder in sys.path:
-            sys.path = [folder] + sys.path
-            
+    
+        # we only update os.environ["PATH"] but not sys.path as this
+        # leads to problems with the import of submodules that have the
+        # same name as the main package
         if not folder in os.environ["PATH"].split(os.pathsep):
             os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"] 
     
