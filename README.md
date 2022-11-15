@@ -50,8 +50,8 @@ It is planned to publish the source code on github. At the moment, please use th
 * Some Device Classes only work with Windows and will not work with other systems, e.g. due to dll files or certain third-party packages.
 
 ## Changelog
-* 1.5.5.44 bugfix: SweepMe! user data folder is not created like in portable mode if pysweepme is used standalone
-* 1.5.5.33 first release of pysweepme on pypi after release of SweepMe! 1.5.5
+* 1.5.6.x
+  * FolderManager: 'addFolderToPATH' does not add subfolders of libs folder to sys.path
 
 ## License
 MIT License
