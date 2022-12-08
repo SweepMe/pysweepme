@@ -34,14 +34,13 @@ from .ErrorMessage import error, debug
 # the variable was introduced with SweepMe! 1.5.4 to set a path during loading Modules as modules are not directly loaded
 TemporaryFolderForPATH = None
 
-FolderManager_initialized = False
-
-
 def addFolderToPATH(path_to_add=""):
-    """ used by DeviceClasses and CustomFunctions to add their path to PATH. If no argument is given, the path of the calling file is used."""
+    """
+    used by DeviceClasses and CustomFunctions to add their path to PATH. If no argument is given, the path of the
+    calling file is used.
+    """
 
     if path_to_add != "":
-    
         if os.path.exists(path_to_add):
             main_path = path_to_add
         else:
@@ -49,14 +48,26 @@ def addFolderToPATH(path_to_add=""):
     else:
         main_file = inspect.stack()[1][1]    
         main_path = os.path.dirname(os.path.realpath(main_file))
-    
+
+    bitness = 64 if sys.maxsize > 2 ** 32 else 32
+
+    # Adding main path
     if not main_path in sys.path:
         sys.path = [main_path] + sys.path
-        
     if not main_path in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"] 
-    
-    libs_path = main_path + os.sep + "libs"
+        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
+
+    libs_path = None
+    if bitness == 32 and os.path.exists(main_path + os.sep + "libs32"):
+        libs_path = main_path + os.sep + "libs32"
+    elif bitness == 64 and os.path.exists(main_path + os.sep + "libs64"):
+        libs_path = main_path + os.sep + "libs64"
+    elif os.path.exists(main_path + os.sep + "libs"):
+        libs_path = main_path + os.sep + "libs"
+    else:
+        debug("Unable to folder '%s' to PATH." % (main_path))
+        return False
+
     if not libs_path in sys.path:
         sys.path = [libs_path] + sys.path
 
@@ -81,50 +92,17 @@ def addFolderToPATH(path_to_add=""):
     return True
     
     
-def addModuleFolderToPATH(path_to_add = ""):
+def addModuleFolderToPATH():
     """ used by Modules to add their path to PATH. If no argument is given, the path of the calling Module is used."""
 
-    if path_to_add != "":
-    
-        if os.path.exists(path_to_add):
-            main_path = path_to_add
-        else:
-            return False
-            
+    if TemporaryFolderForPATH != None and os.path.exists(TemporaryFolderForPATH):
+        main_path = TemporaryFolderForPATH
     else:
-        if TemporaryFolderForPATH != None and os.path.exists(TemporaryFolderForPATH):
-            main_path = TemporaryFolderForPATH
-    
-        else:
-            main_file = inspect.stack()[1][1]    
-            main_path = os.path.dirname(os.path.realpath(main_file))
-        
-    # print(main_path)
-    
-    if not main_path in sys.path:
-        sys.path = [main_path] + sys.path
-        
-    if not main_path in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"] 
-    
-    subfolders = [x[0] for x in os.walk(main_path) if not x[0].endswith('__pycache__')]  
-    # print(subfolders)
-        
-    # add also library.zip to subdirectories if it exists
-    for folder in subfolders:
-        if os.path.exists(folder + os.sep + "library.zip"):
-            subfolders.append(folder + os.sep + "library.zip")
+        main_file = inspect.stack()[1][1]
+        main_path = os.path.dirname(os.path.realpath(main_file))
 
-    
-    for folder in subfolders:
-        if not folder in sys.path:
-            sys.path = [folder] + sys.path
-            
-        if not folder in os.environ["PATH"].split(os.pathsep):
-            os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"] 
-    
-    return True
-    
+    return addFolderToPATH(main_path)
+
     
 def setTemporaryFolderForPATH(path_to_set):
     global TemporaryFolderForPATH
@@ -236,8 +214,6 @@ class FolderManager(object):
                     
                     self.tempfolder = WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current ) + os.sep + 'SweepMe!' + os.sep + 'temp'
 
-                    
-            
             elif sys.platform.startswith("linux"):
                 ## not defined yet, tbd
                 self.publicpath = "."
@@ -245,7 +221,6 @@ class FolderManager(object):
                 self.localpath = "."
                 self.programdatapath = "."
 
-            
             self.libsfolder = self.mainpath + os.sep + "libs"
             
             self.resourcesfolder = self.mainpath + os.sep + 'resources'
@@ -323,9 +298,7 @@ class FolderManager(object):
                             "CUSTOMCOLORMAPS": self.customcolormapsfolder, # Custom colormaps in PUBLIC
                             "CUSTOMSTYLES": self.customstylesfolder, # Custom styles in PUBLIC
                             "CUSTOMICONS": self.customiconsfolder, # Custom icons in PUBLIC
-                            
-                            
-                            
+
                             # "SYSTEMUSER": self.systemuserpath,      # SweepMe! folder in system user folder
                             "EXTLIBS": self.extlibsfolder,          # External libraries such as dll in PUBLIC
                             }
@@ -355,7 +328,6 @@ class FolderManager(object):
         if create:
             self.create_folders()
 
-        
     def __new__(class_, *args, **kwargs):
     
         # this ensures that the OptionManager can be called multiple times without creating a new instance
@@ -363,7 +335,6 @@ class FolderManager(object):
             class_._instance = object.__new__(class_)
              
         return class_._instance        
-
 
     def create_folders(self): 
         
@@ -375,9 +346,8 @@ class FolderManager(object):
             if not os.path.abspath(folder) in os.path.abspath(self.folders["PROGRAMDATA"]):
                 if not os.path.exists(folder):
                     os.mkdir(folder)
-                
-           
-        ### add path if they do not exist
+
+        # add path if they do not exist
         for key in self.folders:
             
             # This folder is not used anymore and should not be used anymore
@@ -411,8 +381,6 @@ class FolderManager(object):
                     if not root in os.environ["PATH"].split(os.pathsep):
                         os.environ["PATH"] += os.pathsep + root
 
-        
-
     def get_path(self, identifier):
         
         if identifier in self.folders:
@@ -427,8 +395,7 @@ class FolderManager(object):
         else:
             debug("FolderManager: Folder %s unknown" % identifier)
             return False
-            
-            
+
     def set_path(self, identifier, path):
         
         if identifier in self.folders:
@@ -460,8 +427,7 @@ class FolderManager(object):
         # print("set_file")
         # print (identifier)
         # print (self.files)
-    
-    
+
     def get_main_dir(self):
         if self.main_is_frozen():
             return os.path.dirname(sys.executable)
@@ -473,4 +439,3 @@ class FolderManager(object):
         
     def is_main_frozen(self):
         return hasattr(sys, "frozen")
-        
