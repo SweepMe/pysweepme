@@ -51,7 +51,6 @@ def addFolderToPATH(path_to_add=""):
         main_file = inspect.stack()[1][1]
         main_path = os.path.dirname(os.path.realpath(main_file))
 
-    # print(main_path)
 
     if not main_path in sys.path:
         sys.path = [main_path] + sys.path
@@ -59,18 +58,24 @@ def addFolderToPATH(path_to_add=""):
     if not main_path in os.environ["PATH"].split(os.pathsep):
         os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
 
-    subfolders = [x[0] for x in os.walk(main_path) if not x[0].endswith('__pycache__')]
-    # print(subfolders)
+    libs_path = main_path + os.sep + "libs"
+    if not libs_path in sys.path:
+        sys.path = [libs_path] + sys.path
 
-    # add also library.zip to subdirectories if it exists
+    # add also library.zip in libs
+    if os.path.exists(libs_path + os.sep + "library.zip"):
+        if not libs_path + os.sep + "library.zip" in sys.path:
+            sys.path = [libs_path + os.sep + "library.zip"] + sys.path
+
+    if not libs_path in os.environ["PATH"].split(os.pathsep):
+        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
+        
+    subfolders = [x[0] for x in os.walk(libs_path) if not x[0].endswith('__pycache__')]
     for folder in subfolders:
-        if os.path.exists(folder + os.sep + "library.zip"):
-            subfolders.append(folder + os.sep + "library.zip")
 
-    for folder in subfolders:
-        if not folder in sys.path:
-            sys.path = [folder] + sys.path
-
+        # we only update os.environ["PATH"] but not sys.path as this
+        # leads to problems with the import of submodules that have the
+        # same name as the main package
         if not folder in os.environ["PATH"].split(os.pathsep):
             os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"]
 
@@ -176,6 +181,12 @@ def set_file(identifier, path):
     if identifier in FoMa.files:
         return FoMa.set_file(identifier, path)
 
+# remains for compatibility 
+def main_is_frozen():
+    return is_main_frozen()
+    
+def is_main_frozen():
+    return hasattr(sys, "frozen")
     
 class FolderManager(object):
 
@@ -423,6 +434,8 @@ class FolderManager(object):
         
         if identifier in self.folders:
             self.folders[identifier] = path
+        else:
+            debug("FolderManager: identifier '%s' unknown to set path" % identifier)
             
     def get_file(self, identifier):
     
@@ -441,6 +454,8 @@ class FolderManager(object):
                 
         if identifier in self.files:
             self.files[identifier] = path
+        else:
+            debug("FolderManager: identifier '%s' unknown to set file" % identifier)
             
         # print()
         # print("set_file")
@@ -455,5 +470,8 @@ class FolderManager(object):
         return os.getcwd()
 
     def main_is_frozen(self):
+        return self.is_main_frozen()
+        
+    def is_main_frozen(self):
         return hasattr(sys, "frozen")
         

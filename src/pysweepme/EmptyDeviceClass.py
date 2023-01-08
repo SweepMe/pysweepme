@@ -38,7 +38,7 @@ _config = ConfigParser()
 
 class EmptyDevice():
     
-    actions = []
+    actions = [] # static variable that can be used in a driver to define a list of function names that can be used as action
 
     def __init__(self):
     
@@ -68,7 +68,7 @@ class EmptyDevice():
         
         # deprecated, remains for compatibility reasons
         # one should always ask the FolderManager regarding the actual path
-        self.tempfolder = self.get_Folder("TEMP")
+        self.tempfolder = self.get_folder("TEMP")
 
         self._parameters = {}
         
@@ -77,6 +77,19 @@ class EmptyDevice():
         # Otherwise, the object is handed over by the module during create_Device
         # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
         self._ParameterStore = {} 
+        
+
+    def list_functions(self):
+        """\
+        returns a list of all function names that are individually defined by the driver, e.g. get/set functions
+        
+        These functions can be be used in python projects when using pysweepme to directly access instrument properties.
+        """
+    
+        all_functions = [func for func in dir(self) if callable(getattr(self, func)) and not func.startswith("_")]
+        empty_device_functions =  [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
+       
+        return list(set(all_functions) - set(empty_device_functions))
 
     def store_parameter(self, key, value):
         """ stores a value in the ParameterStore for a given key """
@@ -396,7 +409,7 @@ class EmptyDevice():
         message_log(msg)
         
     def message_Info(self, msg):
-        """ write to info box """
+        """ command is deprecated, use 'message_info' instead """
 
         self.message_info(msg)
         
@@ -406,7 +419,7 @@ class EmptyDevice():
         message_info(msg)
         
     def message_Box(self, msg):
-        """ creates a message box with given message """
+        """ command is deprecated, use 'message_box' instead """
     
         self.message_box(msg)
         
@@ -420,7 +433,7 @@ class EmptyDevice():
 
         message_balloon(msg)
 
-    """  convenience function  """    
+    """  convenience functions  """    
 
     def get_variables(self):
         """ returns a list of strings being the variable of the Device Class """
@@ -443,7 +456,7 @@ class EmptyDevice():
         self.value = value
  
     def apply_value(self, value):
-        """ convenience function for use to apply a value, mainly for use with pysweepme """
+        """ convenience function for user to apply a value, mainly for use with pysweepme """
         self.value = value
         
         if hasattr(self, "apply"):
@@ -461,7 +474,10 @@ class EmptyDevice():
             self.reach()
 
     def read(self):
-        """ returns a list of values according to functions 'get_variables' and 'get_units' """
+        """\
+        returns a list of values according to functions 'get_variables' and 'get_units'
+        convenience function for pysweepme to quickly retrieve values by calling several semantic standard functions
+        """
         
         self.adapt()
         self.adapt_ready()

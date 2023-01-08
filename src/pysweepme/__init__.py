@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-__version__ = "1.5.5.47"
+__version__ = "1.5.6.4b0"
 
 import sys
 import os
