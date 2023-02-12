@@ -26,8 +26,7 @@ import inspect
 
 from .ErrorMessage import error, debug
 
-from . import FolderManager
-FoMa = FolderManager.FolderManager()
+from .FolderManager import getFoMa
 
 from pysweepme.UserInterface import message_box, message_info, message_balloon, message_log
 
@@ -126,7 +125,7 @@ class EmptyDevice():
         if identifier == "SELF":
             return os.path.abspath(os.path.dirname(inspect.getfile(self.__class__)))
         else: 
-            return FoMa.get_path(identifier)
+            return getFoMa().get_path(identifier)
 
     def get_folder(self, identifier):
         """ same function like get_Folder but more python style """
@@ -141,8 +140,8 @@ class EmptyDevice():
         """ this function checks whether a driver related config file exists """
 
         # if config file directory is changed it must also be changed in version manager!
-        if os.path.isfile(FoMa.get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini"):
-            _config.read(FoMa.get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini")
+        if os.path.isfile(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini"):
+            _config.read(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini")
             return True
         else:
             return False

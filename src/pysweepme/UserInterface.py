@@ -21,10 +21,7 @@
 # SOFTWARE.
 
 import time
-from pysweepme.FolderManager import FolderManager
-
-FoMa = FolderManager()
-logbook_path = FoMa.get_file("LOGBOOK")
+from .FolderManager import getFoMa
 
 
 def get_input(msg) -> str:
@@ -100,7 +97,7 @@ def message_balloon(msg):
 def message_log(msg, logfilepath=None):
 
     if not logfilepath:
-        logfilepath = logbook_path
+        logfilepath = getFoMa().get_file("LOGBOOK")
 
     with open(logfilepath, "a") as logfile:
         year, month, day, hour, min, sec = time.localtime()[:6]
