@@ -220,7 +220,7 @@ class FolderManagerInstance(object):
                 self.programdatapath = os.path.join( WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!' )
                 self.programdatapath_variable = os.path.join( WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!' )
                 
-                self.tempfolder = self.localpath + os.sep + 'temp'
+                self.tempfolder = self.localpath + os.sep + f'temp{self._instance_suffix}'
             
                     
                 if self.is_sweepme_executable and self.is_portable_mode:  # portable mode -> we overwrite the default paths 
@@ -237,10 +237,11 @@ class FolderManagerInstance(object):
                     self.programdatapath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!')
                     self.programdatapath_variable = self.portable_data_path + os.sep + "programdata"
                     
-                    self.tempfolder = WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current ) + os.sep + 'SweepMe!' + os.sep + 'temp'
+                    self.tempfolder = (
+                        WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current)
+                        + os.sep + 'SweepMe!' + os.sep + 'temp{self._instance_suffix}'
+                    )
 
-                    
-            
             elif sys.platform.startswith("linux"):
                 ## not defined yet, tbd
                 self.publicpath = "."
@@ -339,8 +340,8 @@ class FolderManagerInstance(object):
             self.configfile = self.configfolder + os.sep + 'config.ini'
             self.texteditor = self.libsfolder + os.sep + "Pnotepad" + os.sep + "pn.exe"
             self.logbookfile = self.tempfolder + os.sep + "temp_logbook.txt"
-            self.debugfile = self.publicpath + os.sep + "debug.log"
-            self.debugfhfile = self.publicpath + os.sep + "debug_fh.log"
+            self.debugfile = self.publicpath + os.sep + f"debug{self._instance_suffix}.log"
+            self.debugfhfile = self.publicpath + os.sep + f"debug_fh{self._instance_suffix}.log"
                           
             # print("FolderManager: self.files redefined")                
             self.files = {
