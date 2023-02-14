@@ -177,19 +177,31 @@ def main_is_frozen():
     
 def is_main_frozen():
     return hasattr(sys, "frozen")
-    
-class FolderManager(object):
 
-    _instance = None
-    
-    def __init__(self, create = False):
-        
-        """ create defines whether folders are created. When used with pysweepme, the default will not create folders """
+
+# This class allows to create multiple instances of the folder manager. This is only required in
+# rare cases, like getting a folder manager instance that corresponds to the folders of a different
+# process with another instance_id and other paths for the writable objects.
+class FolderManagerInstance(object):
+
+    def __init__(self, create=False, instance_id=None):
+        """create defines whether folders are created. When used with pysweepme, the default will not create folders"""
     
         # this ensures that the FolderManager can be called multiple times without performing __init__ every time
         if not hasattr(self, "_is_init_complete"):
             self._is_init_complete = True
-    
+
+            self._instance_id = instance_id
+            if instance_id is not None:
+                # we do not only use the pure id but rather "instance" + the id.
+                # this simplifies the identification of folders and files that have been created
+                # by additional instances.
+                # Without the string "instance" globbing for instances of the debug.log like "debug_*.log" would
+                # erroneously return debug_fh.log as well.
+                self._instance_suffix = "_instance" + instance_id
+            else:
+                self._instance_suffix = ""
+
             # define variables for all folders   
             self.mainpath = self.get_main_dir() 
             
@@ -346,16 +358,6 @@ class FolderManager(object):
         if create:
             self.create_folders()
 
-        
-    def __new__(class_, *args, **kwargs):
-    
-        # this ensures that the OptionManager can be called multiple times without creating a new instance
-        if not isinstance(class_._instance, class_):
-            class_._instance = object.__new__(class_)
-             
-        return class_._instance        
-
-
     def create_folders(self): 
         
         for folder in [self.publicpath, self.roamingpath, self.localpath, self.programdatapath_variable]:
@@ -464,6 +466,40 @@ class FolderManager(object):
         
     def is_main_frozen(self):
         return hasattr(sys, "frozen")
+
+
+# Singleton Wrapper around the FolderManager, as one usually only wants to use one instance of the FolderManager
+# throughout the whole application.
+class FolderManager(FolderManagerInstance):
+    # If multiple instances of the same application are running, all but the first instance should get a unique
+    # instance_id that is added to certain paths like the measurement folder or the debug.log file to avoid write
+    # conflits
+    _process_instance_id: Optional[str] = None
+    _instance: Optional[FolderManager] = None
+
+    def __init__(self, create=False):
+        super().__init__(create, instance_id=self._process_instance_id)
+
+    def __new__(cls, *args, **kwargs):
+        # this ensures that the FolderManager can be called multiple times without creating a new instance
+        if not isinstance(cls._instance, cls):
+            cls._instance = super().__new__(cls)
+
+        return cls._instance
+
+    @classmethod
+    def has_instance(cls):
+        return cls._instance is not None
+
+    @classmethod
+    def set_instance_id(cls, instance_id: str):
+        if not instance_id:
+            raise Exception("An instance id must be provided")
+        if cls._process_instance_id is not None:
+            raise Exception("The instance id has already been set and cannot be overwritten")
+        if cls.has_instance():
+            raise Exception("The instance_id cannot be set after the FolderManager has already been initialized")
+        cls._process_instance_id = instance_id
 
 
 # The FolderManager is already required within pysweepme itself, or even the FolderManager module.
