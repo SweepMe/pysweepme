@@ -20,22 +20,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+from __future__ import annotations
 import os
 import sys
-import glob
-import shutil
 import inspect
+from typing import Optional
 
 from .ErrorMessage import error, debug
 
 
 # global variable that saves a temporarily set path that could be added to PATH in case addFolderToPATH is called
 # the variable was introduced with SweepMe! 1.5.4 to set a path during loading Modules as modules are not directly loaded
-TemporaryFolderForPATH = None
+TemporaryFolderForPATH: Optional[str] = None
 
-FolderManager_initialized = False
 
+_FoMa: Optional[FolderManager] = None
 
 def addFolderToPATH(path_to_add=""):
     """ used by DeviceClasses and CustomFunctions to add their path to PATH. If no argument is given, the path of the calling file is used."""
@@ -93,7 +92,7 @@ def addModuleFolderToPATH(path_to_add = ""):
             return False
             
     else:
-        if TemporaryFolderForPATH != None and os.path.exists(TemporaryFolderForPATH):
+        if TemporaryFolderForPATH is not None and os.path.exists(TemporaryFolderForPATH):
             main_path = TemporaryFolderForPATH
     
         else:
@@ -139,22 +138,17 @@ def unsetTemporaryFolderForPATH():
          
 def get_path(identifier):
     """ returns a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ... """
-    
-    if not "FoMa" in globals():       
-        FoMa = FolderManager(create = False)
-
+    FoMa = getFoMa()
     if identifier in FoMa.folders:
         return FoMa.get_path(identifier)
     else:
         debug("FolderManager: Folder %s unknown" % identifier)
         return False
-    
+
+
 def set_path(identifier, path):
     """ sets a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ... """
-
-    if not "FoMa" in globals():         
-        FoMa = FolderManager(create = False)
-     
+    FoMa = getFoMa()
     if identifier in FoMa.folders:
         FoMa.set_path(identifier, path)
     else:
@@ -163,23 +157,19 @@ def set_path(identifier, path):
     
             
 def get_file(identifier):
-
-    if not "FoMa" in globals():           
-        FoMa = FolderManager(create = False)
-                
+    FoMa = getFoMa()
     if identifier in FoMa.files:
         return FoMa.get_file(identifier)
     else:
         debug("FolderManager: File %s unknown" % identifier)
         return False
-            
-def set_file(identifier, path):
 
-    if not "FoMa" in globals():        
-        FoMa = FolderManager(create = False)
-            
+
+def set_file(identifier, path):
+    FoMa = getFoMa()
     if identifier in FoMa.files:
         return FoMa.set_file(identifier, path)
+
 
 # remains for compatibility 
 def main_is_frozen():
@@ -474,4 +464,14 @@ class FolderManager(object):
         
     def is_main_frozen(self):
         return hasattr(sys, "frozen")
-        
+
+
+# The FolderManager is already required within pysweepme itself, or even the FolderManager module.
+# But we do not want to initialize the FolderManager already when importing, but only when it is used.
+# This function is mainly for pysweepme itself, as application code which is using pysweepme can also
+# use FolderManager() directly (which is a singleton).
+def getFoMa():
+    global _FoMa
+    if _FoMa is None:
+        _FoMa = FolderManager()
+    return _FoMa
