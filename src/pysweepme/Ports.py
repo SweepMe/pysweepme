@@ -19,8 +19,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import re
+import socket
 import time
+from typing import Tuple
+
+import psutil
 
 from .ErrorMessage import debug, error
 
@@ -143,6 +147,28 @@ def is_resourcemanager():
         return False
 
 
+def is_IP(port_str) -> Tuple[bool, str, int]:
+    port_str = port_str.strip()
+    result = re.search(r"(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
+
+    if not result:
+        return False, None, None
+
+    for i in range(1, 5):
+        if int(result.group(i)) <= 255:
+            continue
+        else:
+            return False, None, None
+
+    if not 0 < int(result.group(5)) <= 65535:
+        return False, None, None
+
+    ip = ".".join([result.group(i) for i in range(1, 5)])
+    host = int(result.group(5))
+
+    return True, ip, host
+
+
 def get_port(ID, properties={}):
     """returns an open port object for the given ID and port properties"""
 
@@ -153,7 +179,6 @@ def get_port(ID, properties={}):
         except:
             error("Ports: Cannot create GPIB port object for %s" % ID)
             return False
-
     # TODO: Prologix can be removed here, if ID does not start with Prologix anymore
     elif ID.startswith("PXI"):
 
@@ -186,6 +211,13 @@ def get_port(ID, properties={}):
         except:
             error("Ports: Cannot create COM port object for %s" % ID)
             return False
+
+    elif ID.startswith("SOCKET") or is_IP(ID)[0]:
+
+        try:
+            port = SOCKETport(ID)
+        except Exception:
+            error("Ports: Cannot create Socket port object for %s" % ID)
 
     elif ID.startswith("USB") or ID.startswith("USBTMC"):
 
@@ -454,13 +486,26 @@ class TCPIP(PortType):
         return resources
 
 
+class PureSocket(PortType):
+
+    properties = PortType.properties
+
+    def find_resources_internal(self):
+        """ find IPv4 addresses"""
+        connections = psutil.net_connections()
+        connections = [
+            con for con in connections
+            if con.status == "LISTEN" and con.laddr.ip != "0.0.0.0" and not con.laddr.ip.startswith("::")
+        ]
+        return [f"{con.laddr.ip}:{con.laddr.port}" for con in connections]
+
+
 class Port(object):
     """ base class for any port """
 
     def __init__(self, ID):
 
         self.port = None
-
         self.port_ID = ID
         self.port_properties = {
             "type": type(self).__name__[:-4],  # removeing port from the end of the port
@@ -482,6 +527,7 @@ class Port(object):
     def initialize_port_properties(self):
 
         # we need to know the PortType Object
+        print("type:", self.port_properties["type"])
         self.port_type = type(port_types[self.port_properties["type"]])
 
         # we have to overwrite with the properties of the Port_type
@@ -828,6 +874,61 @@ class TCPIPport(Port):
         answer = self.port.read()
 
         return answer
+
+
+class SOCKETport(Port):
+
+    def __init__(self, ID):
+
+        super(__class__, self).__init__(ID)
+
+    def open_internal(self):
+
+        port_ID = self.port_properties["ID"]
+        ok, HOST, PORT = is_IP(port_ID)
+        if not ok:
+            raise ValueError(f"Port string {[port_ID]} is not a valid IPV4 address")
+
+        self.port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.port.settimeout(0.1)
+        self.port.connect((HOST, PORT))
+
+        # if self.port_properties["TCPIP_EOLwrite"] is not None:
+        #     self.port.write_termination = self.port_properties["TCPIP_EOLwrite"]
+
+        # if self.port_properties["TCPIP_EOLread"] is not None:
+        #     self.port.read_termination = self.port_properties["TCPIP_EOLread"]
+
+    def close_internal(self):
+        self.port.close()
+
+    def get_identification(self):
+
+        self.write("*IDN?")
+        return self.read()
+
+    def write_internal(self, cmd: str):
+
+        self.port.sendall(cmd.encode('latin-1'))
+        time.sleep(self.port_properties["delay"])
+
+    def read_internal(self, digits=0):
+
+        start_t = time.time()
+        received = False
+
+        while time.time() - start_t < float(self.port_properties["timeout"]):
+            try:
+                answer = self.port.recv(1024)
+                received = True
+                break
+            except socket.timeout:
+                time.sleep(0.01)
+
+        if not received:
+            raise TimeoutError("Socket could not be read")
+
+        return answer.decode('latin-1')
 
 
 class COMport(Port):
@@ -1224,5 +1325,6 @@ port_types = {
     # "ASRL": ASRL(), # Serial communication via visa runtime, just used for testing at the moment
     "USBTMC": USBTMC(),
     "TCPIP": TCPIP(),
+    "SOCKET": PureSocket()
     # "VB": VirtualBench(), # no longer supported as finding ports can be done in Device Class / Driver
 }

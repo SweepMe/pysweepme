@@ -35,7 +35,7 @@ import pysweepme
 # find a certain folder that is used by SweepMe!
 custom_devices_folder = pysweepme.get_path("CUSTOMDEVICES")
 
-mouse = pysweepme.get_device("Logger-PC_Mouse", folder = ".", port = "")
+mouse = pysweepme.get_device("Logger-PC_Mouse", folder = ".", port_string = "")
 # folder is a path from which instrument drivers will be loaded
 # port is a string, e.g. "COM1" or "GPIB0::24::INSTR"
 
