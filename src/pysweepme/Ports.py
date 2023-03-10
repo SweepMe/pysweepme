@@ -880,8 +880,8 @@ class SOCKETport(Port):
         # some sanity checks here would be good
         ok, HOST, PORT = is_IP(self.port_properties["ID"])
         self.port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.port.settimeout(0.1)
         self.port.connect((HOST, PORT))
-        self.port.settimeout(self.port_properties["timeout"])
 
         # if self.port_properties["TCPIP_EOLwrite"] is not None:
         #     self.port.write_termination = self.port_properties["TCPIP_EOLwrite"]
@@ -903,7 +903,20 @@ class SOCKETport(Port):
         time.sleep(self.port_properties["delay"])
 
     def read_internal(self, digits=0):
-        answer = self.port.recv(1024)
+
+        start_t = time.time()
+        received = False
+
+        while time.time() - start_t < float(self.port_properties["timeout"]):
+            try:
+                answer = self.port.recv(1024)
+                received = True
+                break
+            except socket.timeout:
+                time.sleep(0.01)
+
+        if not received:
+            raise TimeoutError("Socket could not be read")
 
         return answer.decode('latin-1')
 

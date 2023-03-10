@@ -16,7 +16,16 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             data = cnxn.recv(1024)
             if not data:
                 break
-            cnxn.sendall(data)
+            print(data)
+            data = data.decode()
+            # if data.find("?") >=0:
+            #     cnxn.sendall(data.encode())
+            print(data)
+            print("sending")
+            cnxn.sendall(data.encode())
+            print("sent")
+
+            # cnxn.sendall(data)
 
 # client example
 
