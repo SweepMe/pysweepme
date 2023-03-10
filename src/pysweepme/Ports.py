@@ -24,6 +24,8 @@ import socket
 import time
 from typing import Tuple
 
+import psutil
+
 from .ErrorMessage import debug, error
 
 # import subprocess  # needed for TCPIP to find IP addresses
@@ -919,6 +921,12 @@ class SOCKETport(Port):
             raise TimeoutError("Socket could not be read")
 
         return answer.decode('latin-1')
+
+    def find_resources_internal(self):
+        p = psutil.Process()
+        local_conns = p.connections(kind='tcp4')
+        # local_conns += p.connections(kind = "inet4")
+        return [con for con in local_conns if con.status == "LISTEN"]
 
 
 class COMport(Port):
