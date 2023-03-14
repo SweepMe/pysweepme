@@ -491,6 +491,12 @@ class PureSocket(PortType):
     properties = PortType.properties
 
 
+    def find_resources_internal(self):
+        p = psutil.Process()
+        local_conns = p.connections(kind='tcp4')
+        # local_conns += p.connections(kind = "inet4")
+        return [con for con in local_conns if con.status == "LISTEN"]
+
 class Port(object):
     """ base class for any port """
 
@@ -921,11 +927,6 @@ class SOCKETport(Port):
 
         return answer.decode('latin-1')
 
-    def find_resources_internal(self):
-        p = psutil.Process()
-        local_conns = p.connections(kind='tcp4')
-        # local_conns += p.connections(kind = "inet4")
-        return [con for con in local_conns if con.status == "LISTEN"]
 
 
 class COMport(Port):
