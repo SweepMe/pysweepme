@@ -149,7 +149,7 @@ def is_resourcemanager():
 
 def is_IP(port_str) -> Tuple[bool, str, int]:
     port_str = port_str.strip()
-    result = re.search("(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
+    result = re.search(r"(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
 
     if not result:
         return False, None, None
@@ -490,12 +490,15 @@ class PureSocket(PortType):
 
     properties = PortType.properties
 
-
     def find_resources_internal(self):
-        p = psutil.Process()
-        local_conns = p.connections(kind='tcp4')
-        # local_conns += p.connections(kind = "inet4")
-        return [con for con in local_conns if con.status == "LISTEN"]
+        """ find IPv4 addresses"""
+        connections = psutil.net_connections()
+        connections = [
+            con for con in connections
+            if con.status == "LISTEN" and con.laddr.ip != "0.0.0.0" and not con.laddr.ip.startswith("::")
+        ]
+        return [f"{con.laddr.ip}:{con.laddr.port}" for con in connections]
+
 
 class Port(object):
     """ base class for any port """
@@ -880,12 +883,12 @@ class SOCKETport(Port):
         super(__class__, self).__init__(ID)
 
     def open_internal(self):
-        print("opening socket")
-        # some sanity checks here would be good
-        ok, HOST, PORT = is_IP(self.port_properties["ID"])
+
+        port_ID = self.port_properties["ID"]
+        ok, HOST, PORT = is_IP(port_ID)
         if not ok:
-            raise ValueError(f"Port string {self.port_properties["ID"]} is not a valid IPV4 address")
-        
+            raise ValueError(f"Port string {[port_ID]} is not a valid IPV4 address")
+
         self.port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.port.settimeout(0.1)
         self.port.connect((HOST, PORT))
@@ -926,7 +929,6 @@ class SOCKETport(Port):
             raise TimeoutError("Socket could not be read")
 
         return answer.decode('latin-1')
-
 
 
 class COMport(Port):
