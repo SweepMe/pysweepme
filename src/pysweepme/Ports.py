@@ -149,7 +149,7 @@ def is_resourcemanager():
 
 def is_IP(port_str) -> Tuple[bool, str, int]:
     port_str = port_str.strip()
-    result = re.search("(\d{0,3}).(\d{0,3}).(\d{0,3}).(\d{0,3}):(\d{0,5})", port_str)
+    result = re.search("(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
 
     if not result:
         return False, None, None
@@ -179,10 +179,8 @@ def get_port(ID, properties={}):
         except:
             error("Ports: Cannot create GPIB port object for %s" % ID)
             return False
-
-    elif ID.startswith(
-            "PXI"
-    ):  # todo: Prologix can be removed here, if ID does not start with Prologix anymore
+    # TODO: Prologix can be removed here, if ID does not start with Prologix anymore
+    elif ID.startswith("PXI"):
 
         try:
             port = PXIport(ID)
@@ -302,8 +300,8 @@ class COM(PortType):
 
     GUIproperties = {
         "baudrate": [
-            "50", "75", "110", "134", "150", "200", "300", "600", "1200", "1800", "2400", "4800",
-            "9600", "19200", "38400", "57600", "115200"
+            "50", "75", "110", "134", "150", "200", "300", "600", "1200", "1800", "2400", "4800", "9600", "19200",
+            "38400", "57600", "115200"
         ][::-1],
         "terminator": [r"\n", r"\r", r"\r\n", r"\n\r"],
         "parity": ["N", "O", "E", "M", "S"],
@@ -440,10 +438,9 @@ class USBdevice(object):
 
         self.properties = {}
 
-        for name in ('Availability', 'Caption', 'ClassGuid', 'ConfigManagerUserConfig',
-                     'CreationClassName', 'Description', 'DeviceID', 'ErrorCleared',
-                     'ErrorDescription', 'InstallDate', 'LastErrorCode', 'Manufacturer', 'Name',
-                     'PNPDeviceID', 'PowerManagementCapabilities', 'PowerManagementSupported',
+        for name in ('Availability', 'Caption', 'ClassGuid', 'ConfigManagerUserConfig', 'CreationClassName',
+                     'Description', 'DeviceID', 'ErrorCleared', 'ErrorDescription', 'InstallDate', 'LastErrorCode',
+                     'Manufacturer', 'Name', 'PNPDeviceID', 'PowerManagementCapabilities', 'PowerManagementSupported',
                      'Service', 'Status', 'StatusInfo', 'SystemCreationClassName', 'SystemName'):
 
             self.properties[name] = None
@@ -500,7 +497,6 @@ class Port(object):
     def __init__(self, ID):
 
         self.port = None
-        print("types", type(self).__name__, type(self).__name__[:-4])
         self.port_ID = ID
         self.port_properties = {
             "type": type(self).__name__[:-4],  # removeing port from the end of the port
@@ -881,6 +877,9 @@ class SOCKETport(Port):
         print("opening socket")
         # some sanity checks here would be good
         ok, HOST, PORT = is_IP(self.port_properties["ID"])
+        if not ok:
+            raise ValueError(f"Port string {self.port_properties["ID"]} is not a valid IPV4 address")
+        
         self.port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.port.settimeout(0.1)
         self.port.connect((HOST, PORT))
@@ -1041,10 +1040,9 @@ class COMport(Port):
 
         if answer == "" and not EOLfound and self.port_properties["Exception"] is True:
             self.close()
-            raise Exception(
-                "Port '%s' with ID '%s' does not respond.\n"
-                "Check port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM" %
-                (self.port_properties["type"], self.port_properties["ID"]))
+            raise Exception("Port '%s' with ID '%s' does not respond.\n"
+                            "Check port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM" %
+                            (self.port_properties["type"], self.port_properties["ID"]))
 
         return answer
 
@@ -1286,8 +1284,7 @@ class PrologixGPIBcontroller:
 
     def set_listenonly(self, listenonly):
         """ set listen-only, only supported in mode = device! """
-        self.write("++lon %s" %
-                   str(listenonly))  # 0 disable 'listen-only' mode, 1 enable 'listen-only' mode
+        self.write("++lon %s" % str(listenonly))  # 0 disable 'listen-only' mode, 1 enable 'listen-only' mode
 
     def get_listenonly(self):
         self.write("++lon")
