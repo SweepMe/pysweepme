@@ -527,7 +527,6 @@ class Port(object):
     def initialize_port_properties(self):
 
         # we need to know the PortType Object
-        print("type:", self.port_properties["type"])
         self.port_type = type(port_types[self.port_properties["type"]])
 
         # we have to overwrite with the properties of the Port_type
