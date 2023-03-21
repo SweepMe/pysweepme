@@ -486,9 +486,14 @@ class TCPIP(PortType):
         return resources
 
 
-class PureSocket(PortType):
+class SOCKET(PortType):
 
     properties = PortType.properties
+    properties.update({
+        "encoding": "latin-1",
+        "SOCKET_EOLwrite": None,
+        "SOCKET_EOLread": None,
+    })
 
     def find_resources_internal(self):
         """ find IPv4 addresses"""
@@ -892,11 +897,11 @@ class SOCKETport(Port):
         self.port.settimeout(0.1)
         self.port.connect((HOST, PORT))
 
-        # if self.port_properties["TCPIP_EOLwrite"] is not None:
-        #     self.port.write_termination = self.port_properties["TCPIP_EOLwrite"]
+        if self.port_properties["SOCKET_EOLwrite"] is not None:
+            self.port.write_termination = self.port_properties["SOCKET_EOLwrite"]
 
-        # if self.port_properties["TCPIP_EOLread"] is not None:
-        #     self.port.read_termination = self.port_properties["TCPIP_EOLread"]
+        if self.port_properties["SOCKET_EOLread"] is not None:
+            self.port.read_termination = self.port_properties["SOCKET_EOLread"]
 
     def close_internal(self):
         self.port.close()
@@ -907,12 +912,13 @@ class SOCKETport(Port):
         return self.read()
 
     def write_internal(self, cmd: str):
-
-        self.port.sendall(cmd.encode('latin-1'))
+        encoding = self.port_properties["encoding"]
+        self.port.sendall(cmd.encode(encoding))
         time.sleep(self.port_properties["delay"])
 
     def read_internal(self, digits=0):
 
+        encoding = self.port_properties["encoding"]
         start_t = time.time()
         received = False
 
@@ -927,7 +933,7 @@ class SOCKETport(Port):
         if not received:
             raise TimeoutError("Socket could not be read")
 
-        return answer.decode('latin-1')
+        return answer.decode(encoding)
 
 
 class COMport(Port):
@@ -1324,6 +1330,6 @@ port_types = {
     # "ASRL": ASRL(), # Serial communication via visa runtime, just used for testing at the moment
     "USBTMC": USBTMC(),
     "TCPIP": TCPIP(),
-    "SOCKET": PureSocket()
+    "SOCKET": SOCKET()
     # "VB": VirtualBench(), # no longer supported as finding ports can be done in Device Class / Driver
 }
