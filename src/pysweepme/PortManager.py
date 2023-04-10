@@ -73,6 +73,13 @@ class PortManager(object):
     def startup(self):
         pass
 
+    def on_load_setting(self):
+        self.clear_portmanager_dialog()
+
+    def clear_portmanager_dialog(self):
+        """ to be overwritten by PortManagerDialog """
+        pass
+
     def get_resources_available(self, port_types, update=False, port_identification=[]):
         # called by SweepMe! to get resources for GUI when using Find Ports
         # port_types is a list of Port types (string), e.g. ['COM', 'GPIB']
@@ -248,6 +255,9 @@ class PortManager(object):
     def close_resourcemanager(self):
         # we close the resourcemanager so that other computers/interfaces can access the equipment
         Ports.close_resourcemanager()
+
+    def is_resourcemanager(self):
+        return Ports.is_resourcemanager()
         
     def close_all_ports(self):
         
