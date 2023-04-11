@@ -25,7 +25,7 @@ from collections import OrderedDict
 from pysweepme.ErrorMessage import error, debug
 from pysweepme import Ports
 from pysweepme import FolderManager
-from pysweepme import ConfigurationManager
+from pysweepme import Config
 
 try:
     import clr  # pythonnet for loading external DotNet DLLs
@@ -46,7 +46,7 @@ class PortManager(object):
         if not hasattr(self, "initialized"):
 
             # Adding Prologix controllers
-            ProgramConfig = ConfigurationManager.Config(FoMa.get_file("CONFIG"))
+            ProgramConfig = Config.Config(FoMa.get_file("CONFIG"))
             prologix_controller = ProgramConfig.getConfigOptions("PrologixController")
             for port in prologix_controller.values():
                 self.add_prologix_controller(port)
