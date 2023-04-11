@@ -499,10 +499,10 @@ class SOCKET(PortType):
         """ find IPv4 addresses"""
         connections = psutil.net_connections()
         connections = [
-            con for con in connections
-            if con.status == "LISTEN" and con.laddr.ip != "0.0.0.0" and not con.laddr.ip.startswith("::")
+            conn for conn in connections
+            if conn.status == "LISTEN" and conn.laddr.ip != "0.0.0.0" and not conn.laddr.ip.startswith("::")
         ]
-        return [f"{con.laddr.ip}:{con.laddr.port}" for con in connections]
+        return [f"{conn.laddr.ip}:{conn.laddr.port}" for conn in connections]
 
 
 class Port(object):
@@ -891,17 +891,24 @@ class SOCKETport(Port):
         port_ID = self.port_properties["ID"]
         ok, HOST, PORT = is_IP(port_ID)
         if not ok:
-            raise ValueError(f"Port string {[port_ID]} is not a valid IPV4 address")
+            # this can happen if HOST is no IPv4 address but a domain or localhost
+            HOST, PORT = port_ID.split(":")
 
         self.port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.port.settimeout(0.1)
-        self.port.connect((HOST, PORT))
+        self.port.connect((HOST, int(PORT)))
 
         if self.port_properties["SOCKET_EOLwrite"] is not None:
             self.port.write_termination = self.port_properties["SOCKET_EOLwrite"]
+        else:
+            self.port.write_termination = ""
 
         if self.port_properties["SOCKET_EOLread"] is not None:
             self.port.read_termination = self.port_properties["SOCKET_EOLread"]
+        else:
+            self.port.read_termination = ""
+
+        self.last_writetime = time.time()
 
     def close_internal(self):
         self.port.close()
@@ -912,9 +919,14 @@ class SOCKETport(Port):
         return self.read()
 
     def write_internal(self, cmd: str):
+
+        if time.time() - self.last_writetime < self.port_properties["delay"]:
+            time.sleep(self.port_properties["delay"] - (time.time() - self.last_writetime))
+
         encoding = self.port_properties["encoding"]
-        self.port.sendall(cmd.encode(encoding))
-        time.sleep(self.port_properties["delay"])
+        self.port.sendall((cmd + self.port.write_termination).encode(encoding))
+
+        self.last_writetime = time.time()
 
     def read_internal(self, digits=0):
 
