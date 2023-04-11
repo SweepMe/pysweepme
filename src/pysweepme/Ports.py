@@ -899,14 +899,14 @@ class SOCKETport(Port):
         self.port.connect((HOST, int(PORT)))
 
         if self.port_properties["SOCKET_EOLwrite"] is not None:
-            self.port.write_termination = self.port_properties["SOCKET_EOLwrite"]
+            self.write_termination = self.port_properties["SOCKET_EOLwrite"]
         else:
-            self.port.write_termination = ""
+            self.write_termination = ""
 
         if self.port_properties["SOCKET_EOLread"] is not None:
-            self.port.read_termination = self.port_properties["SOCKET_EOLread"]
+            self.read_termination = self.port_properties["SOCKET_EOLread"]
         else:
-            self.port.read_termination = ""
+            self.read_termination = ""
 
         self.last_writetime = time.time()
 
@@ -924,11 +924,16 @@ class SOCKETport(Port):
             time.sleep(self.port_properties["delay"] - (time.time() - self.last_writetime))
 
         encoding = self.port_properties["encoding"]
-        self.port.sendall((cmd + self.port.write_termination).encode(encoding))
+        self.port.sendall((cmd + self.write_termination).encode(encoding))
 
         self.last_writetime = time.time()
 
     def read_internal(self, digits=0):
+
+        if digits == 0:
+            bytes_to_read = 1024
+        else:
+            bytes_to_read = 0
 
         encoding = self.port_properties["encoding"]
         start_t = time.time()
@@ -936,7 +941,7 @@ class SOCKETport(Port):
 
         while time.time() - start_t < float(self.port_properties["timeout"]):
             try:
-                answer = self.port.recv(1024)
+                answer = self.port.recv(bytes_to_read)
                 received = True
                 break
             except socket.timeout:
@@ -945,7 +950,9 @@ class SOCKETport(Port):
         if not received:
             raise TimeoutError("Socket could not be read")
 
-        return answer.decode(encoding)
+        answer = answer.decode(encoding)
+        answer = answer.rstrip(self.read_termination)
+        return answer
 
 
 class COMport(Port):
