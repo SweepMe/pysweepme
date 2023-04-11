@@ -20,14 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import os
-import sys
-
-if __name__ == "__main__":
-    pysweepme_repo_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # print("pysweepme path:", pysweepme_repo_path)
-    sys.path.insert(0, pysweepme_repo_path)
-
 from collections import OrderedDict
 
 from pysweepme.ErrorMessage import error, debug
@@ -64,61 +56,82 @@ class PortManager(object):
 
             self.initialized = True
 
-    def __new__(class_, *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         # create singleton
-        if not isinstance(class_._instance, class_):
-            class_._instance = object.__new__(class_)
-        return class_._instance
+        if not isinstance(cls._instance, cls):
+            cls._instance = object.__new__(cls)
+        return cls._instance
 
     def startup(self):
+        """ function is called by SweepMe! """
         pass
 
     def on_load_setting(self):
+        """ function is called by SweepMe! """
         self.clear_portmanager_dialog()
+
+    def prepareRun(self):
+        """ function is called by SweepMe! """
+        self.open_resourcemanager()
+
+    def prepareStop(self):
+        """ function is called by SweepMe! """
+        self.close_all_ports()
+        self.close_resourcemanager()
 
     def clear_portmanager_dialog(self):
         """ to be overwritten by PortManagerDialog """
         pass
 
-    def get_resources_available(self, port_types, update=False, port_identification=[]):
+    def get_resources_available(self, port_types, port_identification=[]):
+        """
+        returns a list of resources for given port types
+        Attention: port identification is not properly implemented. Only works for USBTMC and if identification was
+        already retrieved beforehand
+
+        Args:
+            port_types: list of port types
+            port_identification: list of identification strings
+
+        Returns:
+            List of resource strings
+        """
         # called by SweepMe! to get resources for GUI when using Find Ports
         # port_types is a list of Port types (string), e.g. ['COM', 'GPIB']
 
-        update = True
         port_list = []
 
-        if update:
-        
-            for port_type in port_types:
-            
-                if port_type == "USB":
-                    port_type = "USBTMC"
-                    
-                if port_type in Ports.port_types:
-                    resources = Ports.port_types[port_type].find_resources()
-                    
-                    port_list += resources
+        for port_type in port_types:
 
-            for port in self._ports:
-                if self._ports[port].port_properties["type"] in port_types:
-                    self._ports[port].port_properties["active"] = False
+            if port_type == "USB":
+                port_type = "USBTMC"
 
-            # removing all inactive ports   
-            ports_to_delete = []
-             
-            for port in self._ports:
-                if self._ports[port].port_properties["type"] in port_types:
-                    if self._ports[port].port_properties["active"] is False:
-                        ports_to_delete.append(port)
-     
-            for port in ports_to_delete:
-                del self._ports[port]
+            if port_type in Ports.port_types:
+                resources = Ports.port_types[port_type].find_resources()
+
+                port_list += resources
+
+        for port in self._ports:
+            if self._ports[port].port_properties["type"] in port_types:
+                self._ports[port].port_properties["active"] = False
+
+        # removing all inactive ports
+        ports_to_delete = []
+
+        for port in self._ports:
+            if self._ports[port].port_properties["type"] in port_types:
+                if self._ports[port].port_properties["active"] is False:
+                    ports_to_delete.append(port)
+
+        for port in ports_to_delete:
+            del self._ports[port]
 
         # list all active ports of appropriate type
         for port in self._ports:
             if self._ports[port].port_properties["type"] in port_types:
             
-                if not self._ports[port].port_properties["identification"] is None and self._ports[port].port_properties["type"] in ["USB", "USBTMC"]:
+                if self._ports[port].port_properties["identification"] is not None and \
+                        self._ports[port].port_properties["type"] in ["USB", "USBTMC"]:
                     
                     for identification_string in port_identification:
                         if identification_string in self._ports[port].port_properties["identification"]:
@@ -129,7 +142,17 @@ class PortManager(object):
         
         return port_list
                
-    def get_port(self, resource, properties={}):
+    def get_port(self, resource: str, properties={}):
+        """
+        returns a pysweepme Port object that is opened
+
+        Args:
+            resource: str, name of resource to open, e.g., "COM1"
+            properties: dictionary of with port properties
+
+        Returns:
+            pysweepme Port object
+        """
 
         # check whether properties actually exist
         # we have to check it for all possible port types that are supported so far
@@ -172,8 +195,6 @@ class PortManager(object):
         # port is checked if being open and if not, port is opened
         if self._ports[resource].port_properties["open"] is False:
             self._ports[resource].open()
-                  
-        # print("Port properties after:", self._ports[resource].port_properties)
 
         return self._ports[resource]
 
@@ -194,11 +215,29 @@ class PortManager(object):
         return {}
 
     def remove_port(self, resource):
-        
+        """
+        removes a port by resource name from the list of ports
+
+        Args:
+            resource: str, resource name, e.g. "COM1"
+
+        Returns:
+            None
+        """
         if resource in self._ports:
             del self._ports[resource]
 
-    def find_resources(self, port_types=None):
+    @staticmethod
+    def find_resources(port_types=None):
+        """
+        finds resources for given port types. If no port types are given, all possible port types are searched for
+        resources
+        Args:
+            port_types: List of port types
+
+        Returns:
+            Dictionary containing a list of resource for each port type key
+        """
 
         # all ports if not types are not specified
         if port_types is None:
@@ -216,86 +255,131 @@ class PortManager(object):
         return resources
         
     def get_port_types(self):
+        """
+        Returns:
+            List of port types supported by pysweepme.Ports
+        """
         return Ports.port_types.keys()
         
     def set_port_logging(self, resource, state):
-    
+        """
+        change logging state by resource name
+
+        Args:
+            resource: str, name of the resource such as "COM1"
+            state: bool
+
+        Returns:
+            None
+
+        """
         if resource not in self._ports:
             self._ports[resource] = Ports.get_port(resource)
 
         self._ports[resource].set_logging(state)
         
-    def get_identification(self, resource):
+    def get_identification(self, resource: str) -> str:
+        """
+        returns identification string
+        Args:
+            resource: str, resource name, e.g. "GPIB0::1::INSTR"
 
+        Returns:
+            str -> Identification string
+
+        """
         if resource not in self._ports:
             self._ports[resource] = Ports.get_port(resource)
         
         self._ports[resource].open()
         identification = self._ports[resource].get_identification()
         self._ports[resource].close()
-        self.close_Resourcemanager()
+        self.close_resourcemanager()
         return identification
 
-    def close_port(self, resource):
-        # port is checked if being open and if so port is closed    
+    def open_port(self, resource: str) -> None:
+        """
+        opens port by resource name
+        Args:
+            resource: str, name of resource e.g. "COM1"
+
+        Returns:
+            None
+        """
+        if self._ports[resource].port_properties["open"] is False:
+            self._ports[resource].open()
+
+    def close_port(self, resource: str) -> None:
+        """
+        closes port by resource name
+        Args:
+            resource: str, name of resource e.g. "COM1"
+
+        Returns:
+            None
+        """
         if self._ports[resource].port_properties["open"] is True:
             self._ports[resource].close()
 
-    def prepareRun(self):
-        self.open_resourcemanager()
+    def open_resourcemanager(self) -> None:
+        """
+        creates a VISA resource manager, forwards the method from pysweepme.Ports
 
-    def prepareStop(self):
-        self.close_all_ports()
-        self.close_resourcemanager()
-
-    def open_resourcemanager(self):
-        # we have to open the resourcemanager again as we close it after each run
+        Returns:
+            None
+        """
         Ports.get_resourcemanager()
  
-    def close_resourcemanager(self):
-        # we close the resourcemanager so that other computers/interfaces can access the equipment
+    def close_resourcemanager(self) -> None:
+        """
+        closes the VISA resource manager, forwards the method from pysweepme.Ports
+
+        Returns:
+            None
+        """
         Ports.close_resourcemanager()
 
     def is_resourcemanager(self):
+        """
+        returns whether the VISA resource manager is created, forwards the method from pysweepme.Ports
+
+        Returns:
+            None
+        """
         return Ports.is_resourcemanager()
         
-    def close_all_ports(self):
+    def close_all_ports(self) -> None:
+        """
+        closes all open ports
+
+        Returns:
+
+        """
         
-        for ID in self._ports:
-            if self._ports[ID].port_properties["open"] is True:
-                try:
-                    self._ports[ID].close()
-                except:
-                    error()
-        
-    def add_prologix_controller(self, port):
+        for resource in self._ports:
+            try:
+                self.close_port(resource)
+            except:
+                error()
+
+    def add_prologix_controller(self, port) -> None:
+        """
+        adds a prologix controller by using a COM port
+        Args:
+            port: str, COM port
+
+        Returns:
+            None
+        """
         Ports.add_prologix_controller(port)
 
-    def remove_prologix_controller(self, port):
+    def remove_prologix_controller(self, port) -> None:
+        """
+        removes a prologix controller by using a COM port
+        Args:
+            port: str, COM port
+
+        Returns:
+            None
+        """
         Ports.remove_prologix_controller(port)
-
-
-if __name__ == "__main__":
-
-    PM1 = PortManager()
-    print("First PortManager:", PM1, id(PM1))
-
-    PM2 = PortManager()
-    print("Second PortManager:", PM2, id(PM2))
-
-    print(PM1.find_resources(["COM"]))
-
-    ser1 = PM2.get_port("COM8")
-    ser2 = PM1.get_port("COM9")
-
-    ser1.write("Test")
-    msg = ser2.read()
-    print("Returned message", msg)
-
-    ser1 = PM1.get_port("COM8")
-    ser1.write("Test")
-    msg = ser2.read()
-    print("Returned message", msg)
-
-    ser1.close()
-    ser2.close()
