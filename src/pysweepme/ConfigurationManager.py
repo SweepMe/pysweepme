@@ -27,8 +27,9 @@ from configparser import ConfigParser
 
 
 class Config(ConfigParser):
+    """ convenience wrapper around ConfigParser to quickly access config files"""
 
-    def __init__(self, file_name = None):
+    def __init__(self, file_name=None):
     
         super(__class__, self).__init__()
         
@@ -36,10 +37,18 @@ class Config(ConfigParser):
     
         self.file_name = file_name
 
-    def setFileName(file_name):
+    def setFileName(self, file_name):
+        """ deprecated """
+        self.set_filename(file_name)
+
+    def set_filename(self, file_name):
         self.file_name = file_name
 
     def isConfigFile(self):
+        """ deprecated """
+        return self.is_file()
+
+    def is_file(self):
     
         try:
             if os.path.isfile(self.file_name):
@@ -50,14 +59,18 @@ class Config(ConfigParser):
             error()
             
         return False
-            
+
     def readConfigFile(self):
+        """ deprecated """
+        return self.read()
+
+    def load_file(self):
     
         try:
-            if self.isConfigFile():
+            if self.is_file():
             
                 if os.path.exists(self.file_name):
-                    with open(self.file_name , 'r', encoding='utf-8') as cf:
+                    with open(self.file_name, 'r', encoding='utf-8') as cf:
                         self.read_file(cf)
                 return True
             else:
@@ -69,11 +82,15 @@ class Config(ConfigParser):
         return False
 
     def makeConfigFile(self):
+        """ deprecated """
+        return self.craete_file()
+
+    def create_file(self):
         try:
-            if not self.isConfigFile():
+            if not self.is_file():
                 if not os.path.exists(os.path.dirname(self.file_name)):
                     os.mkdir(os.path.dirname(self.file_name))
-                with open(self.file_name , 'w', encoding='utf-8') as cf:
+                with open(self.file_name, 'w', encoding='utf-8') as cf:
                     self.write(cf)
                     
                 return True
@@ -81,12 +98,15 @@ class Config(ConfigParser):
             error()
 
         return False
-            
+
     def setConfigSection(self, section):
-    
+        """ deprecated """
+        return self.set_section(section)
+
+    def set_section(self, section):
         try:
-            if self.readConfigFile():
-                with open(self.file_name , 'w', encoding='utf-8') as cf:
+            if self.load_file():
+                with open(self.file_name, 'w', encoding='utf-8') as cf:
                     if not self.has_section(section):
                         self.add_section(section)
                     self.write(cf)
@@ -96,15 +116,19 @@ class Config(ConfigParser):
             error()
             
         return False
-                 
+
     def setConfigOption(self, section, option, value):
-          
+        """ deprecated """
+        return self.set_option(section, option, value)
+
+    def set_option(self, section, option, value):
+
         try:
-            self.setConfigSection(section)
+            self.set_section(section)
             
             self.set(section, option, value)
             
-            with open(self.file_name , 'w', encoding='utf-8') as cf:
+            with open(self.file_name, 'w', encoding='utf-8') as cf:
                 self.write(cf)
             return True
         except:
@@ -114,12 +138,12 @@ class Config(ConfigParser):
         
     def removeConfigOption(self, section, option):
         try:
-            if self.readConfigFile():
+            if self.load_file():
                 if self.has_section(section):
-                   if self.has_option(section, option):
+                    if self.has_option(section, option):
                         self.remove_option(section, option)
                         
-                        with open(self.file_name , 'w', encoding='utf-8') as cf:
+                        with open(self.file_name, 'w', encoding='utf-8') as cf:
                             self.write(cf)
                             
                         return True
@@ -128,29 +152,45 @@ class Config(ConfigParser):
             error()
 
     def getConfigSections(self):
-        if self.readConfigFile():
+        """ deprecated """
+        return self.get_sections()
+
+    def get_sections(self):
+        if self.load_file():
             return self.sections()
         else:
             return []
             
     def getConfigOption(self, section, option):
-        vals = {}
-        if self.readConfigFile():
+        """ deprecated """
+        return self.get_value(self, section, option)
+
+    def get_value(self, section, option):
+
+        if self.load_file():
             if section in self:
                 if option.lower() in self[section]:
                     return self[section][option.lower()]     
                 elif option in self[section]:
                     return self[section][option]                    
         return False
-            
+
     def getConfigOptions(self, section):
+        """ deprecated """
+        return self.get_options(section)
+
+    def get_options(self, section):
         vals = {}
-        if self.readConfigFile():
+        if self.load_file():
             if section in self:
                 for key in self[section]:
                     vals[key] = self[section][key]
         return vals
-        
+
     def getConfig(self):
-        config = {section : self.getConfigOptions(section) for section in self.getConfigSections()}
+        """ deprecated """
+        return self.get_values()
+
+    def get_values(self):
+        config = {section: self.getConfigOptions(section) for section in self.getConfigSections()}
         return config
