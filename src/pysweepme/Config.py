@@ -83,7 +83,7 @@ class Config(ConfigParser):
 
     def makeConfigFile(self):
         """ deprecated """
-        return self.craete_file()
+        return self.create_file()
 
     def create_file(self):
         try:
@@ -163,7 +163,7 @@ class Config(ConfigParser):
             
     def getConfigOption(self, section, option):
         """ deprecated """
-        return self.get_value(self, section, option)
+        return self.get_value(section, option)
 
     def get_value(self, section, option):
 
