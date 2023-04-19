@@ -40,8 +40,6 @@ if sys.platform == "win32":
 sys.modules['FolderManager'] = sys.modules['pysweepme.FolderManager']
 sys.modules['EmptyDeviceClass'] = sys.modules['pysweepme.EmptyDeviceClass']
 sys.modules['DeviceManager'] = sys.modules['pysweepme.DeviceManager']
-sys.modules['PortManager'] = sys.modules['pysweepme.PortManager']
-sys.modules['Config'] = sys.modules['pysweepme.Config']
 sys.modules['Ports'] = sys.modules['pysweepme.Ports']
 sys.modules['ErrorMessage'] = sys.modules['pysweepme.ErrorMessage']
 if sys.platform == "win32":
