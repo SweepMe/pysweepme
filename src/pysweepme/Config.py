@@ -29,9 +29,9 @@ from configparser import ConfigParser
 
 def is_nonprimary_instance() -> bool:
     if getFoMa().get_instance_id():
-        return False
-    else:
         return True
+    else:
+        return False
 
 
 def get_write_mode() -> str:
