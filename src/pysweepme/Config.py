@@ -84,7 +84,7 @@ class Config(ConfigParser):
 
     def readConfigFile(self):
         """ deprecated """
-        return self.read()
+        return self.load_file()
 
     def load_file(self):
 
