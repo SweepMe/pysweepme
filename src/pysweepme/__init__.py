@@ -29,12 +29,13 @@ import os
 from . import FolderManager
 from . import EmptyDeviceClass
 from . import DeviceManager
+from . import PortManager
+from . import Config
 from . import Ports
 from . import ErrorMessage
 
 if sys.platform == "win32":
     from . import WinFolder
-
 
 sys.modules['FolderManager'] = sys.modules['pysweepme.FolderManager']
 sys.modules['EmptyDeviceClass'] = sys.modules['pysweepme.EmptyDeviceClass']
