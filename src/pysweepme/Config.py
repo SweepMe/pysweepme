@@ -21,20 +21,42 @@
 # SOFTWARE.
 
 import os
-import sys
+
 from pysweepme.ErrorMessage import error
+from pysweepme.FolderManager import getFoMa
 from configparser import ConfigParser
+
+
+def is_nonprimary_instance() -> bool:
+    if getFoMa().get_instance_id():
+        return False
+    else:
+        return True
+
+
+def get_write_mode() -> str:
+    """
+    The write mode overwrite 'w' for file operations, except when this pysweepme instance is not the only / first
+    instance. In that case it returns 'r' so that no conflicting write operations can occur.
+
+    Returns:
+        The write mode for file operations.
+    """
+    if getFoMa().get_instance_id():
+        return "r"
+    else:
+        return "w"
 
 
 class Config(ConfigParser):
     """ convenience wrapper around ConfigParser to quickly access config files"""
 
     def __init__(self, file_name=None):
-    
+
         super(__class__, self).__init__()
-        
-        self.optionxform = str 
-    
+
+        self.optionxform = str
+
         self.file_name = file_name
 
     def setFileName(self, file_name):
@@ -49,26 +71,26 @@ class Config(ConfigParser):
         return self.is_file()
 
     def is_file(self):
-    
+
         try:
             if os.path.isfile(self.file_name):
                 return True
-            else:                        
+            else:
                 return False
         except:
             error()
-            
+
         return False
 
     def readConfigFile(self):
         """ deprecated """
-        return self.read()
+        return self.load_file()
 
     def load_file(self):
-    
+
         try:
             if self.is_file():
-            
+
                 if os.path.exists(self.file_name):
                     with open(self.file_name, 'r', encoding='utf-8') as cf:
                         self.read_file(cf)
@@ -78,7 +100,7 @@ class Config(ConfigParser):
                 return True
         except:
             error()
-            
+
         return False
 
     def makeConfigFile(self):
@@ -88,11 +110,14 @@ class Config(ConfigParser):
     def create_file(self):
         try:
             if not self.is_file():
+                if is_nonprimary_instance():
+                    raise Exception("Config File cannot be created in multi-instance mode. Please close all SweepMe! "
+                                    "instances and start a single SweepMe! instance first.")
                 if not os.path.exists(os.path.dirname(self.file_name)):
                     os.mkdir(os.path.dirname(self.file_name))
-                with open(self.file_name, 'w', encoding='utf-8') as cf:
+                with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
                     self.write(cf)
-                    
+
                 return True
         except:
             error()
@@ -106,15 +131,18 @@ class Config(ConfigParser):
     def set_section(self, section):
         try:
             if self.load_file():
-                with open(self.file_name, 'w', encoding='utf-8') as cf:
+                if is_nonprimary_instance():
+                    raise Exception("Cannot save config in multi-instance mode. Please change the configuration "
+                                    "in the primary SweepMe! instance.")
+                with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
                     if not self.has_section(section):
                         self.add_section(section)
                     self.write(cf)
             return True
-                   
+
         except:
             error()
-            
+
         return False
 
     def setConfigOption(self, section, option, value):
@@ -124,28 +152,36 @@ class Config(ConfigParser):
     def set_option(self, section, option, value):
 
         try:
+
+            if is_nonprimary_instance():
+                raise Exception("Cannot save config in multi-instance mode. Please change the configuration "
+                                "in the primary SweepMe! instance.")
+
             self.set_section(section)
-            
+
             self.set(section, option, value)
-            
-            with open(self.file_name, 'w', encoding='utf-8') as cf:
+
+            with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
                 self.write(cf)
             return True
         except:
             error()
-            
+
         return False
-        
+
     def removeConfigOption(self, section, option):
         try:
             if self.load_file():
                 if self.has_section(section):
                     if self.has_option(section, option):
+                        if is_nonprimary_instance():
+                            raise Exception("Cannot save config in multi-instance mode. Please change the "
+                                            "configuration in the primary SweepMe! instance.")
                         self.remove_option(section, option)
-                        
-                        with open(self.file_name, 'w', encoding='utf-8') as cf:
+
+                        with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
                             self.write(cf)
-                            
+
                         return True
             return False
         except:
@@ -160,7 +196,7 @@ class Config(ConfigParser):
             return self.sections()
         else:
             return []
-            
+
     def getConfigOption(self, section, option):
         """ deprecated """
         return self.get_value(section, option)
@@ -170,9 +206,9 @@ class Config(ConfigParser):
         if self.load_file():
             if section in self:
                 if option.lower() in self[section]:
-                    return self[section][option.lower()]     
+                    return self[section][option.lower()]
                 elif option in self[section]:
-                    return self[section][option]                    
+                    return self[section][option]
         return False
 
     def getConfigOptions(self, section):

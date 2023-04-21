@@ -502,6 +502,10 @@ class FolderManager(FolderManagerInstance):
             raise Exception("The instance_id cannot be set after the FolderManager has already been initialized")
         cls._process_instance_id = instance_id
 
+    @classmethod
+    def get_instance_id(cls) -> Optional[str]:
+        return cls._process_instance_id
+
 
 # The FolderManager is already required within pysweepme itself, or even the FolderManager module.
 # But we do not want to initialize the FolderManager already when importing, but only when it is used.
