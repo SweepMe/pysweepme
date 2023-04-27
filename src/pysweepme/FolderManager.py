@@ -268,6 +268,7 @@ class FolderManagerInstance(object):
             self.modulesfolder = self.mainpath + os.sep + 'Modules'
             self.sharedmodulesfolder = self.programdatapath_variable + os.sep + 'Modules'
             self.sweepscriptfolder = self.publicpath + os.sep + 'SweepScripts'
+            self.pythonscriptsfolder = self.publicpath + os.sep + "Tools" + os.sep + "PythonScripts"
             self.extlibsfolder = self.publicpath + os.sep + 'ExternalLibraries'
             self.customfolder = self.publicpath + os.sep + 'CustomFiles'
             self.calibrationfolder = self.publicpath + os.sep + 'CalibrationFiles'
@@ -320,6 +321,7 @@ class FolderManagerInstance(object):
                             "ROAMING": self.roamingpath,            # Roaming windows user appdata
                             "PUBLIC": self.publicpath,              # Public documents folder for SweepMe!
                             # "SWEEPSCRIPTS": self.sweepscriptfolder, # Sweep script folder in PUBLIC
+                            "PYTHONSCRIPTS": self.pythonscriptsfolder,
                             "CALIBRATIONS": self.calibrationfolder, # Calibration folder in PUBLIC
                             "CUSTOM": self.customfolder,            # Custom files in PUBLIC
                             "CUSTOMFILES": self.customfolder,       # Custom files in PUBLIC
@@ -385,7 +387,7 @@ class FolderManagerInstance(object):
 
             if not os.path.exists(self.folders[key]):
                 try:
-                    os.mkdir(self.folders[key])
+                    os.makedirs(self.folders[key])
                 except:
                     error()
                 
