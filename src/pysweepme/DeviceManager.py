@@ -25,8 +25,26 @@ import imp
 import time
 import os
 
+from .Architecture import version_info
 from .ErrorMessage import error, debug
 from .Ports import get_port
+
+
+def get_main_py_path(path: str) -> str:
+    """
+    In a given folder, look for the main<suffix>.py file that matches the running python version and bitness.
+    Return the generic main.py path if the specific one does not exist.
+
+    Args:
+        path: Path to the folder that contains the main<suffix>.py file
+
+    Returns:
+        The path to the main<suffix>.py file.
+    """
+    test_file = path + os.sep + f"main_{version_info.python_suffix}.py"
+    if os.path.isfile(test_file):
+        return test_file
+    return path + os.sep + "main.py"
 
 
 def get_device(name, folder=".", port_string=""):
@@ -53,7 +71,7 @@ def get_device(name, folder=".", port_string=""):
 
     try:
         # Loads .py file as module
-        module = imp.load_source(name, folder + os.sep + name + os.sep + "main.py")
+        module = imp.load_source(name, get_main_py_path(folder + os.sep + name))
     except:
         error()
         raise Exception(f"Cannot load Driver '{name}' from folder {folder}. Please change folder or copy Driver "
