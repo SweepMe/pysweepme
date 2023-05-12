@@ -24,7 +24,7 @@ from collections import OrderedDict
 
 from pysweepme.ErrorMessage import error, debug
 from pysweepme import Ports
-from pysweepme import FolderManager
+from pysweepme.FolderManager import getFoMa
 from pysweepme import Config
 
 try:
@@ -33,8 +33,6 @@ except ModuleNotFoundError:
     error("Package clr/pythonnet not installed. Use 'pip install pythonnet' in command line.")
 except ImportError:
     error("Cannot import clr package. Please check whether your Microsoft .NET Framework is up to date.")
-
-FoMa = FolderManager.FolderManager()
 
 
 class PortManager(object):
@@ -46,7 +44,7 @@ class PortManager(object):
         if not hasattr(self, "initialized"):
 
             # Adding Prologix controllers
-            ProgramConfig = Config.Config(FoMa.get_file("CONFIG"))
+            ProgramConfig = Config.Config(getFoMa().get_file("CONFIG"))
             prologix_controller = ProgramConfig.getConfigOptions("PrologixController")
             for port in prologix_controller.values():
                 self.add_prologix_controller(port)
