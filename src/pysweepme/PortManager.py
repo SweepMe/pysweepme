@@ -26,6 +26,7 @@ from pysweepme.ErrorMessage import error, debug
 from pysweepme import Ports
 from pysweepme.FolderManager import getFoMa
 from pysweepme import Config
+from pysweepme.Ports import Port
 
 try:
     import clr  # pythonnet for loading external DotNet DLLs
@@ -50,7 +51,7 @@ class PortManager(object):
                 self.add_prologix_controller(port)
 
             # stores all available ports in a dictionary
-            self._ports = OrderedDict([])
+            self._ports: OrderedDict[str, Port] = OrderedDict([])
 
             self.initialized = True
 

@@ -37,7 +37,7 @@ _config = ConfigParser()
 
 class EmptyDevice():
     
-    actions = [] # static variable that can be used in a driver to define a list of function names that can be used as action
+    actions: list[str] = [] # static variable that can be used in a driver to define a list of function names that can be used as action
 
     def __init__(self):
     

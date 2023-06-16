@@ -19,10 +19,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from __future__ import annotations
+
 import re
 import socket
 import time
-from typing import Tuple
+from typing import Tuple, Optional, Any, Union, cast
 
 import psutil
 
@@ -61,7 +63,7 @@ def get_resources(keys):
     for key in keys:
         resources += port_types[key].find_resources()
 
-    return resources()
+    return resources
 
 
 def open_resourcemanager(visafile_path=""):
@@ -148,20 +150,21 @@ def is_resourcemanager():
 
 
 def is_IP(port_str) -> Tuple[bool, str, int]:
+    error_response = (False, "", -1)
     port_str = port_str.strip()
     result = re.search(r"(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
 
     if not result:
-        return False, None, None
+        return error_response
 
     for i in range(1, 5):
         if int(result.group(i)) <= 255:
             continue
         else:
-            return False, None, None
+            return error_response
 
     if not 0 < int(result.group(5)) <= 65535:
-        return False, None, None
+        return error_response
 
     ip = ".".join([result.group(i) for i in range(1, 5)])
     host = int(result.group(5))
@@ -171,6 +174,8 @@ def is_IP(port_str) -> Tuple[bool, str, int]:
 
 def get_port(ID, properties={}):
     """returns an open port object for the given ID and port properties"""
+
+    port: Port
 
     if ID.startswith("GPIB"):
 
@@ -259,7 +264,7 @@ def close_port(port):
 class PortType(object):
     """ base class for any port type such as GPIB, COM, USBTMC, etc. """
 
-    GUIproperties = {}
+    GUIproperties: dict[str, Any] = {}
 
     properties = {
         "VID": None,
@@ -339,10 +344,10 @@ class COM(PortType):
         try:
             for ID in serial.tools.list_ports.comports():
 
-                ID = str(ID.device).split(' ')[0]
+                id_str = str(ID.device).split(' ')[0]
 
-                if ID not in prologix_addresses:
-                    resources.append(ID)
+                if id_str not in prologix_addresses:
+                    resources.append(id_str)
 
         except:
             error("Error during findind COM ports.")
@@ -436,7 +441,7 @@ class USBdevice(object):
 
     def __init__(self):
 
-        self.properties = {}
+        self.properties: dict[str, Any] = {}
 
         for name in ('Availability', 'Caption', 'ClassGuid', 'ConfigManagerUserConfig', 'CreationClassName',
                      'Description', 'DeviceID', 'ErrorCleared', 'ErrorDescription', 'InstallDate', 'LastErrorCode',
@@ -498,11 +503,14 @@ class SOCKET(PortType):
     def find_resources_internal(self):
         """ find IPv4 addresses"""
         connections = psutil.net_connections()
-        connections = [
-            conn for conn in connections
-            if conn.status == "LISTEN" and conn.laddr.ip != "0.0.0.0" and not conn.laddr.ip.startswith("::")
+        # For UNIX type sockets, conn.laddr will contain a path tuple instead of IP / Port.
+        # Therefore we must ensure that conn.laddr is actually of the type psutil._common.addr
+        connection_strings = [
+            f"{conn.laddr.ip}:{conn.laddr.port}" for conn in connections
+            if conn.status == "LISTEN" and isinstance(conn.laddr, psutil._common.addr)
+            and conn.laddr.ip != "0.0.0.0" and not conn.laddr.ip.startswith("::")
         ]
-        return [f"{conn.laddr.ip}:{conn.laddr.port}" for conn in connections]
+        return connection_strings
 
 
 class Port(object):
@@ -553,7 +561,7 @@ class Port(object):
     def get_logging(self):
         return self.port_properties["debug"]
 
-    def get_identification(self):
+    def get_identification(self) -> str:
         return "not available"
 
     def open(self):
@@ -632,15 +640,16 @@ class Port(object):
 
 class GPIBport(Port):
 
+    port: Union[pyvisa.resources.GPIBInstrument, PrologixGPIBcontroller]
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
     def open_internal(self):
 
         # differentiate between visa GPIB and prologix_controller
         if "Prologix" in self.port_properties["ID"]:
-
             # we take the last part of the ID and cutoff 'Prologix@' to get the COM port
             com_port = self.port_properties["ID"].split("::")[-1][9:]
 
@@ -652,11 +661,14 @@ class GPIBport(Port):
             self.port.open(self.port_properties)
 
         else:
-
             if get_resourcemanager() is False:
                 return False
+            self.port: pyvisa.resources.Resource
 
             self.port = rm.open_resource(self.port_properties["ID"])
+            if isinstance(self.port, PrologixGPIBcontroller):
+                raise TypeError("Prologix port resource found within non-prologix port object.")
+
             self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
             if self.port_properties["GPIB_EOLwrite"] is not None:
@@ -695,6 +707,8 @@ class GPIBport(Port):
         if "Prologix" in self.port_properties["ID"]:
             answer = self.port.read(self.port_properties["ID"].split("::")[1])
         else:
+            if isinstance(self.port, PrologixGPIBcontroller):
+                raise TypeError("Prologix port resource found within non-prologix port object.")
             answer = self.port.read()
 
         return answer
@@ -702,9 +716,11 @@ class GPIBport(Port):
 
 class PXIport(Port):
 
+    port: pyvisa.resources.PXIInstrument
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
     def open_internal(self):
 
@@ -744,9 +760,11 @@ class PXIport(Port):
 
 class ASRLport(Port):
 
+    port: pyvisa.resources.SerialInstrument
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
         from pyvisa.constants import Parity, StopBits
 
@@ -807,6 +825,8 @@ class ASRLport(Port):
 
 class USBTMCport(Port):
 
+    port: pyvisa.resources.USBInstrument
+
     def __init__(self, ID):
 
         super().__init__(ID)
@@ -842,9 +862,11 @@ class USBTMCport(Port):
 
 class TCPIPport(Port):
 
+    port: pyvisa.resources.TCPIPInstrument
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
     def open_internal(self):
 
@@ -883,9 +905,11 @@ class TCPIPport(Port):
 
 class SOCKETport(Port):
 
+    port: socket.socket
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
     def open_internal(self):
 
@@ -951,16 +975,17 @@ class SOCKETport(Port):
         if not received:
             raise TimeoutError("Socket could not be read")
 
-        answer = answer.decode(encoding)
-        answer = answer.rstrip(self.read_termination)
-        return answer
+        decoded_answer = answer.decode(encoding)
+        return decoded_answer.rstrip(self.read_termination)
 
 
 class COMport(Port):
 
+    port: serial.Serial
+
     def __init__(self, ID):
 
-        super(__class__, self).__init__(ID)
+        super().__init__(ID)
 
         self.port = serial.Serial()
 
@@ -999,7 +1024,7 @@ class COMport(Port):
 
         self.refresh_port()
 
-        if not self.port.isOpen():
+        if not self.port.is_open:
             self.port.open()
         else:
             self.port.close()
@@ -1161,7 +1186,7 @@ class PrologixGPIBcontroller:
 
         self.ID_port_properties[ID] = port_properties
 
-        if not self.port.isOpen():
+        if not self.port.is_open:
             self.port.open()
 
         self.port.timeout = self.ID_port_properties[ID]["timeout"]
@@ -1201,12 +1226,12 @@ class PrologixGPIBcontroller:
         # print("mode to listenonly set")
 
     def clear(self):
-        if self.port.isOpen():
+        if self.port.is_open:
             self.port.reset_input_buffer()
             self.port.reset_output_buffer()
 
     def close(self):
-        if self.port.isOpen():
+        if self.port.is_open:
             self.port.close()
 
     def write(self, cmd="", ID=""):
@@ -1337,7 +1362,7 @@ def get_prologix_controllers():
     return list(prologix_controller.values())
 
 
-prologix_controller = {}
+prologix_controller: dict[str, PrologixGPIBcontroller] = {}
 # add_prologix_controller("COM23")
 
 rm = open_resourcemanager()
