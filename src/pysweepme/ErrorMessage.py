@@ -38,21 +38,21 @@ def error(*args):
     print('-'*60)
     
     
-def debug(*args, debugmode_only = False):
+def debug(*args, debugmode_only=False):
     
     if "SWEEPME_DEBUGMODE" in os.environ:
         debug_mode = os.environ["SWEEPME_DEBUGMODE"] == "True"
     else:
         debug_mode = False
 
-    if not (debug_only and not debug_mode): # Messages with debug_only are only printed in debug mode
+    if not debugmode_only or debug_mode:
 
         if len(args) > 0:
             
             year, month, day, hour, min, sec = localtime()[:6]
             print("-"*60)
             print('Debug: %s.%s.%s %02d:%02d:%02d\t' % (day, month, year, hour, min, sec), *args)
-    
-def debug_only(*args):
 
-    debug(*args, debugmode_only = True)
+
+def debug_only(*args):
+    debug(*args, debugmode_only=True)
