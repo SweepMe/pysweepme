@@ -731,14 +731,15 @@ class PXIport(Port):
         while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
             time.sleep(0.01)
 
-        self.port.write(cmd)
-
         self.actualwritetime = time.perf_counter()
+        exc_msg = ("Writing to PXIInstruments has not been implemented yet "
+                   "and needs to be handled by the driver itself.")
+        raise NotImplementedError(exc_msg)
 
     def read_internal(self, digits=0):
-
-        answer = self.port.read()
-        return answer
+        exc_msg = ("Reading from PXIInstruments has not been implemented yet "
+                   "and needs to be handled by the driver itself.")
+        raise NotImplementedError(exc_msg)
 
 
 class ASRLport(Port):
