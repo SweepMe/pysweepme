@@ -133,3 +133,6 @@ dmypy.json
 
 # PyCharm
 .idea/
+
+/ref.json
+/ruff.json
