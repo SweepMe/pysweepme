@@ -21,10 +21,9 @@
 # SOFTWARE.
 
 
-import os, sys
+import os
 import inspect
 
-from .ErrorMessage import error, debug
 
 from .FolderManager import getFoMa
 
@@ -302,7 +301,7 @@ class EmptyDevice():
         """ function to be overloaded if needed """
     
         ## todo: should be removed in future as these lines are anyway not performed if the function is overloaded
-        if self.idlevalue != None:
+        if self.idlevalue is not None:
             self.value = self.idlevalue
             
     def signin(self):

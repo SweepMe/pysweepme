@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 import socket
 import time
-from typing import Tuple, Optional, Any, Union, cast
+from typing import Tuple, Any, Union
 
 import psutil
 
@@ -507,8 +507,8 @@ class SOCKET(PortType):
         # Therefore we must ensure that conn.laddr is actually of the type psutil._common.addr
         connection_strings = [
             f"{conn.laddr.ip}:{conn.laddr.port}" for conn in connections
-            if conn.status == "LISTEN" and isinstance(conn.laddr, psutil._common.addr)
-            and conn.laddr.ip != "0.0.0.0" and not conn.laddr.ip.startswith("::")
+            if conn.status == "LISTEN" and isinstance(conn.laddr, psutil._common.addr)  # noqa: SLF001
+            and conn.laddr.ip != "0.0.0.0" and not conn.laddr.ip.startswith("::")  # noqa: S104 (false positive)
         ]
         return connection_strings
 

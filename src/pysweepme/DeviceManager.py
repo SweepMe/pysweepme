@@ -22,11 +22,10 @@
 
 
 import imp
-import time
 import os
 
 from .Architecture import version_info
-from .ErrorMessage import error, debug
+from .ErrorMessage import error
 from .Ports import get_port
 
 

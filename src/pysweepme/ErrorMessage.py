@@ -24,7 +24,7 @@
 from traceback import print_exc
 from time import localtime
 
-import os, sys
+import os
 
 def error(*args):
 

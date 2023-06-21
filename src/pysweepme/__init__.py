@@ -24,7 +24,6 @@
 __version__ = "1.5.6.4b0"
 
 import sys
-import os
 
 from . import FolderManager
 from . import EmptyDeviceClass
@@ -50,3 +49,11 @@ from .EmptyDeviceClass import EmptyDevice
 from .DeviceManager import get_device, get_driver
 from .Ports import get_port, close_port
 from .ErrorMessage import error, debug
+
+__all__ = ["FolderManager", "addFolderToPATH", "get_path", "set_path",
+           "EmptyDeviceClass", "EmptyDevice",
+           "DeviceManager", "get_device", "get_driver",
+           "Ports", "get_port", "close_port",
+           "PortManager", "Config",
+           "ErrorMessage","error", "debug",
+           "WinFolder"]
