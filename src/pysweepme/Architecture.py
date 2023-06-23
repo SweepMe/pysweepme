@@ -4,11 +4,11 @@ from typing import List
 
 class VersionInfo:
     _information_extracted: bool = False
-    _python_version_str: str = None
-    _python_version_short_str: str = None
-    _python_bitness_str: str = None
-    _python_suffix: str = None
-    _python_compatibility_flags: List[str] = None
+    _python_version_str: str
+    _python_version_short_str: str
+    _python_bitness_str: str
+    _python_suffix: str
+    _python_compatibility_flags: List[str]
 
     def extract_information(self):
         if not self._information_extracted:
@@ -23,6 +23,7 @@ class VersionInfo:
                 f"{self._python_version_str}-any",
                 f"{self._python_version_str}-{self._python_bitness_str}"
             ]
+            self._information_extracted = True
 
     @property
     def python_version_str(self) -> str:

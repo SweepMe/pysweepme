@@ -1,0 +1,27 @@
+name: Check Version
+
+on: 
+  pull_request:
+    branches: main
+
+permissions:
+  contents: read
+
+jobs:
+  check_version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.9"
+    - name: Install environment
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-deps .
+    - name: Run version check
+      run: |
+        python .github/check_version_uniqueness.py
+        

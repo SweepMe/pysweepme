@@ -1,0 +1,71 @@
+name: Publish
+
+on: 
+  workflow_dispatch:
+    inputs:
+      targetenv:
+        description: 'Target Environment'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+        - testpypi
+        - pypi
+
+permissions:
+  contents: write
+
+jobs:
+  overview:
+    name: Overview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Job Summary
+        run: |
+          if [[ "${{ github.ref_name }}" != "main" && "${{ inputs.targetenv || 'testpypi' }}" == "pypi" ]]
+          then
+          {
+              echo "::error::Publishing to PyPI is only allowed from the main branch";
+              exit 1;
+          }
+          fi;
+          echo "### Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Publish to ${{ inputs.targetenv || 'testpypi' }} environment from ${{ github.ref_name }} branch." >> $GITHUB_STEP_SUMMARY
+  publish:
+    name: Publish
+    runs-on: windows-2022
+    needs: overview
+    environment: ${{ inputs.targetenv || 'testpypi' }}
+    env:
+      TWINE_USERNAME: '__token__'
+      TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.9"
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install build~=0.10.0 twine~=4.0.2
+    - name: Build 
+      run: |
+        python -m build --wheel
+    - name: Publish distribution
+      run: |
+        twine upload --repository-url ${{ vars.PYPI_API_ENDPOINT }} dist/*
+    - name: Tag commit
+      if: ${{ (github.ref_name == 'main') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
+      run: |
+        pip install --no-index --no-deps --find-links=dist/ pysweepme
+        $PysweepmeVersion = python -c "import importlib.metadata; print(importlib.metadata.version('pysweepme'))"
+        if ( -not (Get-ChildItem -Path dist -Filter "*${PysweepmeVersion}*.whl"))
+        {
+          Throw "Inspected version $PysweepmeVersion could not be found in any wheels in the dist folder."
+        }
+        $TagName = "Release-${PysweepmeVersion}_(${{ inputs.targetenv || 'testpypi' }})"
+        git tag $TagName
+        git push origin $TagName
+      shell: pwsh
+        

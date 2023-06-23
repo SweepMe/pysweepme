@@ -53,9 +53,9 @@ class Config(ConfigParser):
 
     def __init__(self, file_name=None):
 
-        super(__class__, self).__init__()
+        super().__init__()
 
-        self.optionxform = str
+        self.optionxform = str  # type: ignore
 
         self.file_name = file_name
 

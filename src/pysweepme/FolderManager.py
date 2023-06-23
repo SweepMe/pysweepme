@@ -416,7 +416,7 @@ class FolderManagerInstance(object):
                 
             if key == "EXTLIBS":
             
-                for root, dirs, files in os.walk(self.folders[key], topdown=True):
+                for root, _dirs, _files in os.walk(self.folders[key], topdown=True):
            
                     if not root in sys.path:
                         sys.path.append(root)
@@ -508,7 +508,7 @@ class FolderManager(FolderManagerInstance):
         return cls._instance
 
     @classmethod
-    def has_instance(cls):
+    def has_instance(cls) -> bool:
         return cls._instance is not None
 
     @classmethod
