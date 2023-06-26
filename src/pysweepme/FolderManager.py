@@ -59,7 +59,12 @@ def addFolderToPATH(path_to_add=""):
     if not main_path in os.environ["PATH"].split(os.pathsep):
         os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
 
-    subfolders = [x[0] for x in os.walk(main_path) if not x[0].endswith('__pycache__')]
+    # libraries folder is used by newer SweepMe! versions and will have incompatible binary code
+    # which would lead to load errors
+    excluded_folder = main_path + os.sep + "libraries"
+
+    subfolders = [x[0] for x in os.walk(main_path)
+                  if not x[0].endswith('__pycache__') and not x[0].startswith(excluded_folder)]
     # print(subfolders)
 
     # add also library.zip to subdirectories if it exists
@@ -101,9 +106,14 @@ def addModuleFolderToPATH(path_to_add = ""):
         sys.path = [main_path] + sys.path
         
     if not main_path in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"] 
-    
-    subfolders = [x[0] for x in os.walk(main_path) if not x[0].endswith('__pycache__')]  
+        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
+
+    # libraries folder is used by newer SweepMe! versions and will have incompatible binary code
+    # which would lead to load errors
+    excluded_folder = main_path + os.sep + "libraries"
+
+    subfolders = [x[0] for x in os.walk(main_path)
+                  if not x[0].endswith('__pycache__') and not x[0].startswith(excluded_folder)]
     # print(subfolders)
         
     # add also library.zip to subdirectories if it exists
