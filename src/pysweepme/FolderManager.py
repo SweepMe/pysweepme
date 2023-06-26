@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import sys
 import inspect
+from pathlib import Path
 from typing import Optional
 
 from .Architecture import version_info
@@ -39,108 +40,86 @@ TemporaryFolderForPATH: Optional[str] = None
 _FoMa: Optional[FolderManager] = None
 
 
-def addFolderToPATH(path_to_add=""):
-    """
-    Used by DeviceClasses and CustomFunctions to add their path to PATH.
-    If no argument is given, the path of the calling file is used.
-    """
+def _prepend_to_os_path(path_to_prepend: Path) -> None:
+    if str(path_to_prepend) not in os.environ["PATH"].split(os.pathsep):
+        os.environ["PATH"] = str(path_to_prepend) + os.pathsep + os.environ["PATH"]
 
-    if path_to_add != "":
 
-        if os.path.exists(path_to_add):
-            main_path = path_to_add
-        else:
-            return False
-    else:
+def _prepend_to_sys_path(path_to_prepend: Path) -> None:
+    if str(path_to_prepend) not in sys.path:
+        sys.path = [str(path_to_prepend), *sys.path]
 
-        main_file = inspect.stack()[1][1]
-        main_path = os.path.dirname(os.path.realpath(main_file))
 
-    if main_path not in sys.path:
-        sys.path = [main_path] + sys.path
-
-    if main_path not in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
-
-    libs_path = main_path + os.sep + f"libs_{version_info.python_suffix}"
-    if not os.path.isdir(libs_path):
-        # if there is no libs directory specific for the current architecture, then use the generic libs folder
-        libs_path = main_path + os.sep + "libs"
-
-    if libs_path not in sys.path:
-        sys.path = [libs_path] + sys.path
-
+def _add_libs_dirs_to_path(libs_path: Path) -> None:
+    if not libs_path.is_dir():
+        return
+    _prepend_to_os_path(libs_path)
+    _prepend_to_sys_path(libs_path)
     # add also library.zip in libs
-    if os.path.exists(libs_path + os.sep + "library.zip"):
-        if not libs_path + os.sep + "library.zip" in sys.path:
-            sys.path = [libs_path + os.sep + "library.zip"] + sys.path
+    if (libs_path / "library.zip").exists():
+        _prepend_to_sys_path(libs_path / "library.zip")
 
-    if libs_path not in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
-        
-    subfolders = [x[0] for x in os.walk(libs_path) if not x[0].endswith('__pycache__')]
+    subfolders = [subfolder for subfolder in libs_path.rglob("*")
+                  if subfolder.is_dir() and subfolder.name != "__pycache__"]
     for folder in subfolders:
         # we only update os.environ["PATH"] but not sys.path as this
         # leads to problems with the import of submodules that have the
         # same name as the main package
-        if folder not in os.environ["PATH"].split(os.pathsep):
-            os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"]
+        _prepend_to_os_path(folder)
+
+
+def addFolderToPATH(path_to_add: str = "") -> bool:
+    """Add libraries folder of calling script to the PATH.
+
+    Used by DeviceClasses and CustomFunctions to add their path to PATH.
+    If no argument is given, the path of the calling file is used.
+    """
+    if not path_to_add:
+        main_file = inspect.stack()[1][1]
+        main_path = Path(main_file).resolve().parent.absolute()
+    elif Path(path_to_add).exists():
+        main_path = Path(path_to_add).resolve().absolute()
+    else:
+        return False
+
+    _prepend_to_sys_path(main_path)
+    _prepend_to_os_path(main_path)
+
+    libs_paths = [
+        main_path / "libraries" / f"libs_{version_info.python_suffix}",  # architecture specific
+        main_path / "libraries" / "libs_common",  # common
+    ]
+
+    if not any(libs_path.is_dir() for libs_path in libs_paths):
+        # if there is no libs directory in the new libraries folder, then use old libs folder as fallback
+        libs_paths = [main_path / "libs"]
+
+    for libs_path in libs_paths:
+        _add_libs_dirs_to_path(libs_path)
 
     return True
     
     
-def addModuleFolderToPATH(path_to_add=""):
-    """
+def addModuleFolderToPATH(path_to_add: str = "") -> bool:
+    """Add libraries folder of calling module to the PATH.
+
     Used by Modules to add their path to PATH.
     If no argument is given, the path of the calling Module is used.
     """
-
-    if path_to_add != "":
-    
-        if os.path.exists(path_to_add):
+    if path_to_add:
+        if Path(path_to_add).exists():
             main_path = path_to_add
         else:
             return False
             
+    elif TemporaryFolderForPATH is not None and Path(TemporaryFolderForPATH).exists():
+        main_path = TemporaryFolderForPATH
+    
     else:
-        if TemporaryFolderForPATH is not None and os.path.exists(TemporaryFolderForPATH):
-            main_path = TemporaryFolderForPATH
-    
-        else:
-            main_file = inspect.stack()[1][1]    
-            main_path = os.path.dirname(os.path.realpath(main_file))
+        main_file = inspect.stack()[1][1]
+        main_path = str(Path(main_file).resolve().parent.absolute())
 
-    if main_path not in sys.path:
-        sys.path = [main_path] + sys.path
-        
-    if main_path not in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = main_path + os.pathsep + os.environ["PATH"]
-
-    libs_path = main_path + os.sep + f"libs_{version_info.python_suffix}"
-    if not os.path.isdir(libs_path):
-        # if there is no libs directory specific for the current architecture, then use the generic libs folder
-        libs_path = main_path + os.sep + "libs"
-
-    if libs_path not in sys.path:
-        sys.path = [libs_path] + sys.path
-
-    # add also library.zip in libs
-    if os.path.exists(libs_path + os.sep + "library.zip"):
-        if not libs_path + os.sep + "library.zip" in sys.path:
-            sys.path = [libs_path + os.sep + "library.zip"] + sys.path
-
-    if libs_path not in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = libs_path + os.pathsep + os.environ["PATH"]
-
-    subfolders = [x[0] for x in os.walk(libs_path) if not x[0].endswith('__pycache__')]
-    for folder in subfolders:
-        # we only update os.environ["PATH"] but not sys.path as this
-        # leads to problems with the import of submodules that have the
-        # same name as the main package
-        if folder not in os.environ["PATH"].split(os.pathsep):
-            os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"]
-    
-    return True
+    return addFolderToPATH(main_path)
     
     
 def setTemporaryFolderForPATH(path_to_set):
