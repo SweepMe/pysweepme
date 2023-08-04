@@ -24,6 +24,7 @@
 import inspect
 import os
 from configparser import ConfigParser
+from typing import Any
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
@@ -38,16 +39,18 @@ class EmptyDevice:
     ] = []  # static variable that can be used in a driver to define a list of function names that can be used as action
 
     def __init__(self) -> None:
-        self.device_communication = {}  # here to make sure that it is known, later it is overwritten by SweepMe!
+        # here to make sure that it is known, later it is overwritten by SweepMe!
+        self.device_communication: dict[str, Any] = {}
 
-        self.variables = []
-        self.units = []
-        self.plottype = []  # True if plotted
-        self.savetype = []  # True if saved
+        self.variables: list[str] = []
+        self.units: list[str] = []
+        self.plottype: list[bool] = []  # True if plotted
+        self.savetype: list[bool] = []  # True if saved
 
         self.shortname = ""
         self.idlevalue = None  # deprecated, remains for compatibility reasons
         self.stopvalue = None  # deprecated, remains for compatibility reasons
+        self.value = None
 
         self.abort = ""  # deprecated, remains for compatibility reasons
         self.stopMeasurement = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
@@ -56,9 +59,9 @@ class EmptyDevice:
         self._is_run_stopped = False
 
         self.port_manager = False
-        self.port_types = []
-        self.port_identifications = [""]
-        self.port_properties = {}
+        self.port_types: list[str] = []
+        self.port_identifications: list[str] = [""]
+        self.port_properties: dict[str, Any] = {}
 
         self.DeviceClassName = str(self.__class__)[8:-2].split(".")[0]
 
@@ -66,13 +69,13 @@ class EmptyDevice:
         # one should always ask the FolderManager regarding the actual path
         self.tempfolder = self.get_folder("TEMP")
 
-        self._parameters = {}
+        self._parameters: dict[Any, Any] = {}
 
         # ParameterStore
         # needs to be defined here in case the device class is used standalone with pysweepme
         # Otherwise, the object is handed over by the module during create_Device
         # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
-        self._ParameterStore = {}
+        self._ParameterStore: dict[Any, Any] = {}
 
     def list_functions(self):
         """Returns a list of all function names that are individually defined by the driver, e.g. get/set functions.
