@@ -323,11 +323,12 @@ class EmptyDevice():
     def apply(self):
         """ function to be overloaded if needed """
         pass
-        
-    ## not used because Temperature module uses a function that checks whether a reach function exists
-    ## before reach can be used here, one has to change the Temperature module beforehand.
-    # def reach(self):
-        # pass
+
+    def reach(self) -> None:
+        """Actively wait until the applied value is reached.
+
+        Optional, can be overriden by the device class if needed.
+        """
         
     def adapt(self):
         """ function to be overloaded if needed """
