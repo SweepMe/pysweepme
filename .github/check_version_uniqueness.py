@@ -9,7 +9,7 @@ not_found = False
 
 try:
     subprocess.check_call(
-        [  # noqa: S
+        [  # noqa: S603, S607
             "python",
             "-m",
             "pip",
