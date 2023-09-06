@@ -74,8 +74,8 @@ def instantiate_device(folder: str, name: str) -> EmptyDevice:
     return device
 
 
-def get_device(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
-    """Create a driver instance. Same as get_driver().
+def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
+    """Create a driver instance.
 
     Args:
         name: Name of the driver being the name of the driver folder
@@ -109,8 +109,8 @@ def get_device(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
     return device
 
 
-def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
-    """Create a driver instance.
+def get_device(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
+    """Create a driver instance. Same as get_driver().
 
     Args:
         name: Name of the driver being the name of the driver folder
@@ -122,4 +122,4 @@ def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
     Returns:
         Initialized Device object of the driver with port and default parameters set.
     """
-    return get_device(name, folder, port_string)
+    return get_driver(name, folder, port_string)
