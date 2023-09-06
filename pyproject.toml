@@ -21,7 +21,7 @@ dependencies = [
     "psutil ~= 5.9.3",
     "pythonnet ~= 3.0.0.post1",
     "pyserial ~= 3.5",
-    "PyVISA ~= 1.12.0",
+    "PyVISA ~= 1.13.0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +53,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 120
+target-version = "py39"
 src = ["src"]
 select = [
     "F",
