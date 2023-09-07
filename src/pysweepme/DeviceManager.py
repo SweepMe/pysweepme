@@ -25,6 +25,7 @@ import imp
 import os
 from pathlib import Path
 
+from ._utils import deprecated
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
@@ -109,17 +110,4 @@ def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
     return device
 
 
-def get_device(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
-    """Create a driver instance. Same as get_driver().
-
-    Args:
-        name: Name of the driver being the name of the driver folder
-        folder: (optional) General folder to look for drivers, If folder is not used or empty, the driver is loaded
-            from the folder of the running script/project
-        port_string: (optional) A port resource name as selected in SweepMe! such as 'COM1', 'GPIB0::1::INSTR', etc.
-            It is required if the driver connects to an instrument and needs to open a specific port.
-
-    Returns:
-        Initialized Device object of the driver with port and default parameters set.
-    """
-    return get_driver(name, folder, port_string)
+get_device = deprecated("1.5.8", "Use get_driver() instead.", name="get_device")(get_driver)
