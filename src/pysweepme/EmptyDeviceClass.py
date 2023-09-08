@@ -21,10 +21,14 @@
 # SOFTWARE.
 
 
+from __future__ import annotations
+
+import contextlib
 import inspect
 import os
 from configparser import ConfigParser
-from typing import Any
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
@@ -69,7 +73,7 @@ class EmptyDevice:
         # one should always ask the FolderManager regarding the actual path
         self.tempfolder = self.get_folder("TEMP")
 
-        self._parameters: dict[Any, Any] = {}
+        self._latest_parameters: dict[str, Any] | None = None
 
         # ParameterStore
         # needs to be defined here in case the device class is used standalone with pysweepme
@@ -181,36 +185,76 @@ class EmptyDevice:
     def get_GUIparameter(self, parameter):
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
 
-    def set_GUIparameter(self):
+    def set_GUIparameter(self) -> dict[str, Any]:
         """Is overwritten by Device Class to set the GUI parameter a user can select."""
         return {}
 
-    def set_parameters(self, parameter={}):
-        standard_parameter = self.set_GUIparameter()
+    def reset_latest_parameters(self) -> None:
+        """Initialize or reset the saved parameters to their default.
 
-        for key in standard_parameter:
-            if isinstance(standard_parameter[key], list):
-                standard_parameter[key] = standard_parameter[key][0]  # take the first value from list as default value
+        The parameters will be set to their default values. If Port / Device were already set, these properties
+        are retained.
 
-        for key in parameter:
-            if key in standard_parameter or key in ["Port", "Label", "Channel"]:
-                standard_parameter[key] = parameter[key]
-            else:
-                msg = (
-                    f"Keyword '{key}' not supported as parameter. "
-                    f"Supported parameters are: {'), '.join(list(standard_parameter.keys()))}"
-                )
-                raise Exception(msg)
+        """
+        previous_parameters = self._latest_parameters or {}
+        # we need to do a deepcopy. If the driver has it's defaults in a dictionary, we do not want to change it
+        self._latest_parameters = deepcopy(self.set_GUIparameter())
 
-        self.update_parameters(standard_parameter)
+        # if the default for a property is a list (user shall choose one), we use the first element as the default
+        for key, default in self._latest_parameters.items():
+            if isinstance(default, list):
+                self._latest_parameters[key] = default[0]
 
-        self.get_GUIparameter(standard_parameter)
+        # copy previous Device and Port, if they exist, because they are never part of the defaults
+        properties_to_copy = ["Device", "Port"]
+        for property_to_copy in properties_to_copy:
+            with contextlib.suppress(KeyError):
+                self._latest_parameters[property_to_copy] = previous_parameters[property_to_copy]
 
-    def update_parameters(self, parameter={}):
-        self._parameters.update(parameter)
+    def set_parameters(self, parameters: dict[str, Any] | None = None) -> None:
+        """Overwrite GUI parameters.
 
-    def get_parameters(self):
-        return self._parameters
+        Args:
+            parameters: Dictionary mapping from keys-to-overwrite to the new values.
+
+        """
+        if self._latest_parameters is None:
+            self.reset_latest_parameters()
+
+        if TYPE_CHECKING:
+            # the reset_latest_parameters() will set self._latest_parameters, so it can't be None any longer
+            # This assert is used to give that information to type checkers
+            assert self._latest_parameters is not None
+
+        supported_parameters = [*self._latest_parameters.keys(), "Port", "Label", "Channel", "Device"]
+        if parameters:
+            for key, value in parameters.items():
+                if key in supported_parameters:
+                    self._latest_parameters[key] = value
+                else:
+                    msg = (
+                        f"Keyword '{key}' not supported as parameter. "
+                        f"Supported parameters are: {', '.join(supported_parameters)}"
+                    )
+                    raise ValueError(msg)
+
+            self.get_GUIparameter(self._latest_parameters)
+
+    def get_parameters(self) -> dict[str, Any]:
+        """Retrieve the parameters that are currently saved for the device.
+
+        Returns:
+            Mapping of parameter keys to their current values.
+        """
+        if self._latest_parameters is None:
+            self.reset_latest_parameters()
+
+        if TYPE_CHECKING:
+            # the reset_latest_parameters() will set self._latest_parameters, so it can't be None any longer
+            # This assert is used to give that information to type checkers
+            assert self._latest_parameters is not None
+
+        return self._latest_parameters
 
     def set_port(self, port):
         self.port = port
