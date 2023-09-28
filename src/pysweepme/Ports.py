@@ -218,7 +218,7 @@ def get_port(ID, properties={}):
             return False
 
     elif ID.startswith("SOCKET") or is_IP(ID)[0]:
-
+        # actually, the ID must not start with SOCKET, it only works for IPv4 addresses
         try:
             port = SOCKETport(ID)
         except Exception:
@@ -350,7 +350,7 @@ class COM(PortType):
                     resources.append(id_str)
 
         except:
-            error("Error during findind COM ports.")
+            error("Error during finding COM ports.")
 
         return resources
 
@@ -582,6 +582,13 @@ class Port(object):
     def close_internal(self):
         pass
 
+    def clear(self) -> None:
+        """Clears the port, can have different meaning depending on each port."""
+        self.clear_internal()
+
+    def clear_internal(self) -> None:
+        """Function to be overwritten by each port to device what is done during clear."""
+
     def write(self, cmd):
         """ write a command via a port"""
 
@@ -662,7 +669,7 @@ class GPIBport(Port):
 
         else:
             if get_resourcemanager() is False:
-                return False
+                return
             self.port: pyvisa.resources.Resource
 
             self.port = rm.open_resource(self.port_properties["ID"])
@@ -677,12 +684,12 @@ class GPIBport(Port):
             if self.port_properties["GPIB_EOLread"] is not None:
                 self.port.read_termination = self.port_properties["GPIB_EOLread"]
 
-            self.port.clear()
-
     def close_internal(self):
-
-        self.port.clear()
         self.port.close()
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.clear()
 
     def get_identification(self):
 
@@ -725,17 +732,17 @@ class PXIport(Port):
     def open_internal(self):
 
         if get_resourcemanager() is False:
-            return False
+            return
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
-        self.port.clear()
-
     def close_internal(self):
-
-        self.port.clear()
         self.port.close()
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.clear()
 
     def get_identification(self):
 
@@ -795,7 +802,7 @@ class ASRLport(Port):
     def open_internal(self):
 
         if get_resourcemanager() is False:
-            return False
+            return
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = int(self.port_properties["timeout"]) * 1000  # must be in ms now
@@ -804,12 +811,14 @@ class ASRLport(Port):
         self.port.stop_bits = self.stopbits[float(self.port_properties["stopbits"])]
         self.port.parity = self.parities[str(self.port_properties["parity"])]
         # self.port.flow_control = self.parities[str(self.port_properties["parity"])]
-        self.port.clear()
 
     def close_internal(self):
-        self.port.clear()
         self.port.close()
         self.port_properties["open"] = False
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.clear()
 
     def write_internal(self, cmd):
 
@@ -834,16 +843,17 @@ class USBTMCport(Port):
     def open_internal(self):
 
         if get_resourcemanager() is False:
-            return False
+            return
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
-        self.port.clear()
 
     def close_internal(self):
-
-        self.port.clear()
         self.port.close()
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.clear()
 
     def get_identification(self):
 
@@ -871,11 +881,10 @@ class TCPIPport(Port):
     def open_internal(self):
 
         if get_resourcemanager() is False:
-            return False
+            return
 
         self.port = rm.open_resource(self.port_properties["ID"])
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
-        self.port.clear()
 
         if self.port_properties["TCPIP_EOLwrite"] is not None:
             self.port.write_termination = self.port_properties["TCPIP_EOLwrite"]
@@ -884,8 +893,11 @@ class TCPIPport(Port):
             self.port.read_termination = self.port_properties["TCPIP_EOLread"]
 
     def close_internal(self):
-        self.port.clear()
         self.port.close()
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.clear()
 
     def get_identification(self):
 
@@ -1030,12 +1042,18 @@ class COMport(Port):
             self.port.close()
             self.port.open()
 
-        self.port.reset_input_buffer()
-        self.port.reset_output_buffer()
+        # for normal COM ports, the clear will only clear the buffer without sending commands to the instrument,
+        # so it is safe to use.
+        self.clear_internal()
 
     def close_internal(self):
         self.port.close()
         self.port_properties["open"] = False
+
+    def clear_internal(self) -> None:
+        """Clear the port."""
+        self.port.reset_input_buffer()
+        self.port.reset_output_buffer()
 
     def write_internal(self, cmd):
 
