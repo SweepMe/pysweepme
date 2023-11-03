@@ -51,21 +51,23 @@ def _prepend_to_sys_path(path_to_prepend: Path) -> None:
 
 
 def _add_libs_dirs_to_path(libs_path: Path) -> None:
+    # Only the main folder is only added to sys.path, as adding subfolders
+    # leads to problems with the import of submodules that have the
+    # same name as the main package.
+    # Only folders that actually contain dll files are added to the
+    # environment variable PATH, because it has a limit of 32767 characters
+    # which would be exceeded quickly otherwise.
     if not libs_path.is_dir():
         return
-    _prepend_to_os_path(libs_path)
     _prepend_to_sys_path(libs_path)
     # add also library.zip in libs
     if (libs_path / "library.zip").exists():
         _prepend_to_sys_path(libs_path / "library.zip")
 
-    subfolders = [subfolder for subfolder in libs_path.rglob("*")
-                  if subfolder.is_dir() and subfolder.name != "__pycache__"]
-    for folder in subfolders:
-        # we only update os.environ["PATH"] but not sys.path as this
-        # leads to problems with the import of submodules that have the
-        # same name as the main package
-        _prepend_to_os_path(folder)
+    # Find all dll files and then take the directory they are in
+    dll_folders = {dll_file.parent for dll_file in libs_path.rglob("*.dll") if dll_file.is_file()}
+    for dll_folder in dll_folders:
+        _prepend_to_os_path(dll_folder)
 
 
 def addFolderToPATH(path_to_add: str = "") -> bool:
@@ -83,7 +85,11 @@ def addFolderToPATH(path_to_add: str = "") -> bool:
         return False
 
     _prepend_to_sys_path(main_path)
-    _prepend_to_os_path(main_path)
+    # Only add the main path to the OS PATH if it actually contains a dll.
+    # Although this should not happen, as dll's should be in the libs 32bit or 64bit directories.
+    # We use any(...) so that the glob Generator can stop when the first dll is found.
+    if any(main_path.glob("*.dll")):
+        _prepend_to_os_path(main_path)
 
     libs_paths = [
         main_path / "libraries" / f"libs_{version_info.python_suffix}",  # architecture specific
