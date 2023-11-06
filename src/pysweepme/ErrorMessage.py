@@ -26,8 +26,13 @@ from time import localtime
 
 import os
 
-def error(*args):
 
+def error(*args: object) -> None:
+    """Print arguments to the debug log including an exception stacktrace.
+
+    Args:
+        *args: The arguments to print to the debug log.
+    """
     year, month, day, hour, min, sec = localtime()[:6]
     print("-"*60)
     print('Time: %s.%s.%s %02d:%02d:%02d' % (day, month, year, hour, min, sec))
@@ -38,8 +43,13 @@ def error(*args):
     print('-'*60)
     
     
-def debug(*args, debugmode_only=False):
-    
+def debug(*args: object, debugmode_only: bool = False) -> None:
+    """Print arguments to the debug log.
+
+    Args:
+        *args: The arguments to print to the debug log.
+        debugmode_only: True if the arguments shall be printed only when debug mode is on.
+    """
     if "SWEEPME_DEBUGMODE" in os.environ:
         debug_mode = os.environ["SWEEPME_DEBUGMODE"] == "True"
     else:
@@ -54,5 +64,10 @@ def debug(*args, debugmode_only=False):
             print('Debug: %s.%s.%s %02d:%02d:%02d\t' % (day, month, year, hour, min, sec), *args)
 
 
-def debug_only(*args):
+def debug_only(*args: object) -> None:
+    """Print arguments to the debug log if debug mode is on.
+
+    Args:
+        *args: The arguments to print to the debug log.
+    """
     debug(*args, debugmode_only=True)
