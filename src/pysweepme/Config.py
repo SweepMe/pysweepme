@@ -21,22 +21,18 @@
 # SOFTWARE.
 
 import os
+from configparser import ConfigParser
 
 from pysweepme.ErrorMessage import error
 from pysweepme.FolderManager import getFoMa
-from configparser import ConfigParser
 
 
 def is_nonprimary_instance() -> bool:
-    if getFoMa().get_instance_id():
-        return True
-    else:
-        return False
+    return bool(getFoMa().get_instance_id())
 
 
 def get_write_mode() -> str:
-    """
-    The write mode overwrite 'w' for file operations, except when this pysweepme instance is not the only / first
+    """The write mode overwrite 'w' for file operations, except when this pysweepme instance is not the only / first
     instance. In that case it returns 'r' so that no conflicting write operations can occur.
 
     Returns:
@@ -49,10 +45,9 @@ def get_write_mode() -> str:
 
 
 class Config(ConfigParser):
-    """ convenience wrapper around ConfigParser to quickly access config files"""
+    """Convenience wrapper around ConfigParser to quickly access config files."""
 
-    def __init__(self, file_name=None):
-
+    def __init__(self, file_name=None) -> None:
         super().__init__()
 
         self.optionxform = str  # type: ignore
@@ -60,39 +55,33 @@ class Config(ConfigParser):
         self.file_name = file_name
 
     def setFileName(self, file_name):
-        """ deprecated """
+        """Deprecated."""
         self.set_filename(file_name)
 
     def set_filename(self, file_name):
         self.file_name = file_name
 
     def isConfigFile(self):
-        """ deprecated """
+        """Deprecated."""
         return self.is_file()
 
     def is_file(self):
-
         try:
-            if os.path.isfile(self.file_name):
-                return True
-            else:
-                return False
+            return bool(os.path.isfile(self.file_name))
         except:
             error()
 
         return False
 
     def readConfigFile(self):
-        """ deprecated """
+        """Deprecated."""
         return self.load_file()
 
     def load_file(self):
-
         try:
             if self.is_file():
-
                 if os.path.exists(self.file_name):
-                    with open(self.file_name, 'r', encoding='utf-8') as cf:
+                    with open(self.file_name, "r", encoding="utf-8") as cf:
                         self.read_file(cf)
                 return True
             else:
@@ -104,18 +93,20 @@ class Config(ConfigParser):
         return False
 
     def makeConfigFile(self):
-        """ deprecated """
+        """Deprecated."""
         return self.create_file()
 
     def create_file(self):
         try:
             if not self.is_file():
                 if is_nonprimary_instance():
-                    raise Exception("Config File cannot be created in multi-instance mode. Please close all SweepMe! "
-                                    "instances and start a single SweepMe! instance first.")
+                    msg = "Config File cannot be created in multi-instance mode. Please close all SweepMe! instances and start a single SweepMe! instance first."
+                    raise Exception(
+                        msg,
+                    )
                 if not os.path.exists(os.path.dirname(self.file_name)):
                     os.mkdir(os.path.dirname(self.file_name))
-                with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
+                with open(self.file_name, get_write_mode(), encoding="utf-8") as cf:
                     self.write(cf)
 
                 return True
@@ -125,16 +116,18 @@ class Config(ConfigParser):
         return False
 
     def setConfigSection(self, section):
-        """ deprecated """
+        """Deprecated."""
         return self.set_section(section)
 
     def set_section(self, section):
         try:
             if self.load_file():
                 if is_nonprimary_instance():
-                    raise Exception("Cannot save config in multi-instance mode. Please change the configuration "
-                                    "in the primary SweepMe! instance.")
-                with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
+                    msg = "Cannot save config in multi-instance mode. Please change the configuration in the primary SweepMe! instance."
+                    raise Exception(
+                        msg,
+                    )
+                with open(self.file_name, get_write_mode(), encoding="utf-8") as cf:
                     if not self.has_section(section):
                         self.add_section(section)
                     self.write(cf)
@@ -146,22 +139,22 @@ class Config(ConfigParser):
         return False
 
     def setConfigOption(self, section, option, value):
-        """ deprecated """
+        """Deprecated."""
         return self.set_option(section, option, value)
 
     def set_option(self, section, option, value):
-
         try:
-
             if is_nonprimary_instance():
-                raise Exception("Cannot save config in multi-instance mode. Please change the configuration "
-                                "in the primary SweepMe! instance.")
+                msg = "Cannot save config in multi-instance mode. Please change the configuration in the primary SweepMe! instance."
+                raise Exception(
+                    msg,
+                )
 
             self.set_section(section)
 
             self.set(section, option, value)
 
-            with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
+            with open(self.file_name, get_write_mode(), encoding="utf-8") as cf:
                 self.write(cf)
             return True
         except:
@@ -171,24 +164,24 @@ class Config(ConfigParser):
 
     def removeConfigOption(self, section, option):
         try:
-            if self.load_file():
-                if self.has_section(section):
-                    if self.has_option(section, option):
-                        if is_nonprimary_instance():
-                            raise Exception("Cannot save config in multi-instance mode. Please change the "
-                                            "configuration in the primary SweepMe! instance.")
-                        self.remove_option(section, option)
+            if self.load_file() and self.has_section(section) and self.has_option(section, option):
+                if is_nonprimary_instance():
+                    msg = "Cannot save config in multi-instance mode. Please change the configuration in the primary SweepMe! instance."
+                    raise Exception(
+                        msg,
+                    )
+                self.remove_option(section, option)
 
-                        with open(self.file_name, get_write_mode(), encoding='utf-8') as cf:
-                            self.write(cf)
+                with open(self.file_name, get_write_mode(), encoding="utf-8") as cf:
+                    self.write(cf)
 
-                        return True
+                return True
             return False
         except:
             error()
 
     def getConfigSections(self):
-        """ deprecated """
+        """Deprecated."""
         return self.get_sections()
 
     def get_sections(self):
@@ -198,35 +191,31 @@ class Config(ConfigParser):
             return []
 
     def getConfigOption(self, section, option):
-        """ deprecated """
+        """Deprecated."""
         return self.get_value(section, option)
 
     def get_value(self, section, option):
-
-        if self.load_file():
-            if section in self:
-                if option.lower() in self[section]:
-                    return self[section][option.lower()]
-                elif option in self[section]:
-                    return self[section][option]
+        if self.load_file() and section in self:
+            if option.lower() in self[section]:
+                return self[section][option.lower()]
+            elif option in self[section]:
+                return self[section][option]
         return False
 
     def getConfigOptions(self, section):
-        """ deprecated """
+        """Deprecated."""
         return self.get_options(section)
 
     def get_options(self, section):
         vals = {}
-        if self.load_file():
-            if section in self:
-                for key in self[section]:
-                    vals[key] = self[section][key]
+        if self.load_file() and section in self:
+            for key in self[section]:
+                vals[key] = self[section][key]
         return vals
 
     def getConfig(self):
-        """ deprecated """
+        """Deprecated."""
         return self.get_values()
 
     def get_values(self):
-        config = {section: self.getConfigOptions(section) for section in self.getConfigSections()}
-        return config
+        return {section: self.getConfigOptions(section) for section in self.getConfigSections()}
