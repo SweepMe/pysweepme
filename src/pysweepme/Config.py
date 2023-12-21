@@ -25,64 +25,57 @@ from __future__ import annotations
 import os
 from configparser import ConfigParser
 from pathlib import Path
-from types import TracebackType
-from typing import IO, Any, Callable, Protocol, Union, cast
+from typing import Callable, cast
 
-from pysweepme.ErrorMessage import error
-
-
-class FileIOContextProtocol(Protocol):
-    def __enter__(self) -> IO[Any]:
-        """Function to return a file descriptor."""
-
-    def __exit__(
-        self,
-        exc_type: type[Exception] | None,
-        exc_value: Exception | None,
-        traceback: TracebackType | None,
-    ) -> bool | None:
-        """Function to close context manager."""
-
-
-class FileIOProtocolWithoutModifiedCheck(Protocol):
-    def open(  # noqa: A003, PLR0913
-        self,
-        mode: str = "r",
-        buffering: int = -1,
-        encoding: str | None = None,
-        errors: str | None = None,
-        newline: str | None = None,
-    ) -> FileIOContextProtocol:
-        """Function to open a file compatible with pathlib.Path when used in a context manager."""
-
-
-class FileIOProtocolWithModifiedCheck(FileIOProtocolWithoutModifiedCheck):
-    def set_full_read(self) -> None:
-        """Function that shall be called when a file is read completely.
-
-        If a file was modified by an external program, the user does not need to decide whether to overwrite the file
-        or not, if the respective file was only read after the external modification.
-        """
-
-
-FileIOProtocol = Union[FileIOProtocolWithoutModifiedCheck, FileIOProtocolWithModifiedCheck]
+from .ErrorMessage import error
+from .pysweepme_types import FileIOProtocol
 
 
 class DefaultFileIO:
+    """Manages which class shall be used to perform File IO operations.
+
+    By default, pathlib.Path() will be used, but the application may register an alternative default that behaves
+    the same when calling open() in a `with` statement.
+    """
+
     custom_default_file_io: tuple[Callable[[Path | str], FileIOProtocol]] | None = None
 
     @classmethod
     def register_custom_default(cls, function: Callable[[Path | str], FileIOProtocol]) -> None:
+        """Register an alternative default for creating a Path-compatible instance for file IO operations.
+
+        Args:
+            function: Function that accepts a Path or string representing the file and returns an instance that behaves
+                      like pathlib.Path()
+        """
         # use a tuple to prevent python from considering it a bound method
         cls.custom_default_file_io = (function,)
 
     @staticmethod
     def pysweepme_default_fileio(file: Path | str) -> FileIOProtocol:
+        """Create a pathlib.Path instance.
+
+        Args:
+            file: Path or string representing the file.
+
+        Returns:
+            Path instance for the requested argument.
+        """
         # Path has more sophisticated signatures than the FileIOProtocol, so we need to cast the type
         return cast(FileIOProtocol, Path(file))
 
     @staticmethod
     def default_fileio(file: Path | str) -> FileIOProtocol:
+        """Create a pathlib.Path() compatible instance for the requested file.
+
+        If the application did not register an alternative default, a pathlib.Path() instance will be returned.
+
+        Args:
+            file: Path or string representing the file.
+
+        Returns: An instance that behaves like pathlib.Path()
+
+        """
         if DefaultFileIO.custom_default_file_io:
             return DefaultFileIO.custom_default_file_io[0](file)
         return DefaultFileIO.pysweepme_default_fileio(file)
@@ -96,6 +89,22 @@ class Config(ConfigParser):
         file_name: Path | str,
         custom_reader_writer: Callable[[Path | str], FileIOProtocol] = DefaultFileIO.default_fileio,
     ) -> None:
+        """Create a Config instance.
+
+        The Config instance should always be created directly before it is used, to make use of the incremental write
+        capabilities that reduce conflicts when using multiple instances of the application. That way, the Config class
+        will read the current config ini file, apply the requested changes only to the respective section and key, and
+        write those changes without overwriting other sections/keys that might have been modified by another program.
+
+        Args:
+            file_name: The path (Path object or string) to the config file.
+                       Deprecated: A string containing the contents of an ini file.
+            custom_reader_writer: If this argument is not provided (recommended), the file operations will be performed
+                                  using python's pathlib.Path() (unless the application registered another default).
+                                  This argument can be a function returning another instance of a pathlib.Path()
+                                  compatible class that shall be used for file IO operations only for this config
+                                  instance.
+        """
         super().__init__()
 
         self.optionxform = str  # type: ignore
@@ -134,8 +143,13 @@ class Config(ConfigParser):
                     self.read_file(cf)
                     if hasattr(self.reader_writer, "set_full_read"):
                         self.reader_writer.set_full_read()
-            else:
+            elif isinstance(self.file_name, str):
+                # apparently the Config instance is not a valid, existing file, so we try to read it as the content
+                # of an ini file
                 self.read_string(self.file_name)
+            else:
+                msg = f"The config file {self.file_name!s} does not exist and thus cannot be read."
+                ValueError(msg)
         except:
             error()
             return False
