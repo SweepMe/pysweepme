@@ -43,6 +43,7 @@ class EmptyDevice:
     ] = []  # static variable that can be used in a driver to define a list of function names that can be used as action
 
     _device_communication: ClassVar[dict[str, Any]] = {}
+    _parameter_store: ClassVar[dict[str, Any]] = {}
 
     def __init__(self) -> None:
         self.variables: list[str] = []
@@ -74,12 +75,6 @@ class EmptyDevice:
 
         self._latest_parameters: dict[str, Any] | None = None
 
-        # ParameterStore
-        # needs to be defined here in case the device class is used standalone with pysweepme
-        # Otherwise, the object is handed over by the module during create_Device
-        # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
-        self._ParameterStore: dict[Any, Any] = {}
-
     @property
     def device_communication(self) -> dict[str, Any]:
         """Single (global) dictionary where drivers can store their information that can be shared across instances."""
@@ -109,14 +104,30 @@ class EmptyDevice:
 
         return list(set(all_functions) - set(empty_device_functions))
 
-    def store_parameter(self, key, value):
-        """Stores a value in the ParameterStore for a given key."""
-        self._ParameterStore[key] = value
+    def store_parameter(self, key: str, value: object) -> None:
+        """Stores a value in the ParameterStore for a given key.
 
-    def restore_parameter(self, key):
-        """Restores a parameter from the ParameterStore for a given key."""
-        if key in self._ParameterStore:
-            return self._ParameterStore[key]
+        Drivers can use the ParameterStore to store information and restore the same information later even in
+        a new instance.
+
+        Args:
+            key: The key under which the information is stored. It should be unique and not conflicting with
+                 other drivers.
+            value: The information to be stored.
+        """
+        self._parameter_store[key] = value
+
+    def restore_parameter(self, key: str) -> Any:  # noqa: ANN401  # The type of the information is up to the user
+        """Restores a parameter from the ParameterStore for a given key.
+
+        Args:
+            key: The key under which the information was stored before.
+
+        Returns:
+            The stored information, or None if no information can be found under the given key.
+        """
+        if key in self._parameter_store:
+            return self._parameter_store[key]
         return None
 
     def _on_run(self):
