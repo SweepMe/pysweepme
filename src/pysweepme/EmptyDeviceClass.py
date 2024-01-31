@@ -28,7 +28,7 @@ import inspect
 import os
 from configparser import ConfigParser
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
@@ -42,10 +42,9 @@ class EmptyDevice:
         str
     ] = []  # static variable that can be used in a driver to define a list of function names that can be used as action
 
-    def __init__(self) -> None:
-        # here to make sure that it is known, later it is overwritten by SweepMe!
-        self.device_communication: dict[str, Any] = {}
+    _device_communication: ClassVar[dict[str, Any]] = {}
 
+    def __init__(self) -> None:
         self.variables: list[str] = []
         self.units: list[str] = []
         self.plottype: list[bool] = []  # True if plotted
@@ -80,6 +79,25 @@ class EmptyDevice:
         # Otherwise, the object is handed over by the module during create_Device
         # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
         self._ParameterStore: dict[Any, Any] = {}
+
+    @property
+    def device_communication(self) -> dict[str, Any]:
+        """Single (global) dictionary where drivers can store their information that can be shared across instances."""
+        return EmptyDevice._device_communication
+
+    @device_communication.setter
+    def device_communication(self, _: object) -> None:
+        msg = (
+            "Changing the device_communication dictionary is not allowed.\n"
+            "Please only work on specific indices, e.g. \n"
+            ">>> self.device_communication[<your index>] = <your value>"
+        )
+        raise TypeError(msg)
+
+    @staticmethod
+    def clear_device_communication() -> None:
+        """Clear all information that have been stored in the device_communication dictionary."""
+        EmptyDevice._device_communication = {}
 
     def list_functions(self):
         """Returns a list of all function names that are individually defined by the driver, e.g. get/set functions.
