@@ -30,6 +30,7 @@ from typing import IO, Any, Protocol, Union
 
 class FileIOContextProtocol(Protocol):
     """Protocol for a ContextManager for IO Operations."""
+
     def __enter__(self) -> IO[Any]:
         """Function to return a file descriptor."""
 
@@ -48,6 +49,7 @@ class FileIOProtocolWithoutModifiedCheck(Protocol):
     In contrast to Path's open(), this function does not return a file descriptor directly and instead always
     must be used in conjunction with a `with` statement that will return the file descriptor of the opened file.
     """
+
     def open(  # noqa: A003, PLR0913
         self,
         mode: str = "r",
@@ -65,6 +67,7 @@ class FileIOProtocolWithModifiedCheck(FileIOProtocolWithoutModifiedCheck):
     In contrast to Path's open(), this function does not return a file descriptor directly and instead always
     must be used in conjunction with a `with` statement that will return the file descriptor of the opened file.
     """
+
     def set_full_read(self) -> None:
         """Function that shall be called when a file is read completely.
 
