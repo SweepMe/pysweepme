@@ -21,7 +21,7 @@ class VersionInfo:
                 "any",
                 f"any-{self._python_bitness_str}",
                 f"{self._python_version_str}-any",
-                f"{self._python_version_str}-{self._python_bitness_str}"
+                f"{self._python_version_str}-{self._python_bitness_str}",
             ]
             self._information_extracted = True
 

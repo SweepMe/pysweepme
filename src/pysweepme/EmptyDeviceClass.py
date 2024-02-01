@@ -28,7 +28,7 @@ import inspect
 import os
 from configparser import ConfigParser
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
@@ -42,10 +42,10 @@ class EmptyDevice:
         str
     ] = []  # static variable that can be used in a driver to define a list of function names that can be used as action
 
-    def __init__(self) -> None:
-        # here to make sure that it is known, later it is overwritten by SweepMe!
-        self.device_communication: dict[str, Any] = {}
+    _device_communication: ClassVar[dict[str, Any]] = {}
+    _parameter_store: ClassVar[dict[str, Any]] = {}
 
+    def __init__(self) -> None:
         self.variables: list[str] = []
         self.units: list[str] = []
         self.plottype: list[bool] = []  # True if plotted
@@ -75,11 +75,24 @@ class EmptyDevice:
 
         self._latest_parameters: dict[str, Any] | None = None
 
-        # ParameterStore
-        # needs to be defined here in case the device class is used standalone with pysweepme
-        # Otherwise, the object is handed over by the module during create_Device
-        # The ParameterStore can then be used to store and restore some parameters after re-instantiating.
-        self._ParameterStore: dict[Any, Any] = {}
+    @property
+    def device_communication(self) -> dict[str, Any]:
+        """Single (global) dictionary where drivers can store their information that can be shared across instances."""
+        return EmptyDevice._device_communication
+
+    @device_communication.setter
+    def device_communication(self, _: object) -> None:
+        msg = (
+            "Changing the device_communication dictionary is not allowed.\n"
+            "Please only work on specific indices, e.g. \n"
+            ">>> self.device_communication[<your index>] = <your value>"
+        )
+        raise TypeError(msg)
+
+    @staticmethod
+    def clear_device_communication() -> None:
+        """Clear all information that have been stored in the device_communication dictionary."""
+        EmptyDevice._device_communication = {}
 
     def list_functions(self):
         """Returns a list of all function names that are individually defined by the driver, e.g. get/set functions.
@@ -91,14 +104,30 @@ class EmptyDevice:
 
         return list(set(all_functions) - set(empty_device_functions))
 
-    def store_parameter(self, key, value):
-        """Stores a value in the ParameterStore for a given key."""
-        self._ParameterStore[key] = value
+    def store_parameter(self, key: str, value: object) -> None:
+        """Stores a value in the ParameterStore for a given key.
 
-    def restore_parameter(self, key):
-        """Restores a parameter from the ParameterStore for a given key."""
-        if key in self._ParameterStore:
-            return self._ParameterStore[key]
+        Drivers can use the ParameterStore to store information and restore the same information later even in
+        a new instance.
+
+        Args:
+            key: The key under which the information is stored. It should be unique and not conflicting with
+                 other drivers.
+            value: The information to be stored.
+        """
+        self._parameter_store[key] = value
+
+    def restore_parameter(self, key: str) -> Any:  # noqa: ANN401  # The type of the information is up to the user
+        """Restores a parameter from the ParameterStore for a given key.
+
+        Args:
+            key: The key under which the information was stored before.
+
+        Returns:
+            The stored information, or None if no information can be found under the given key.
+        """
+        if key in self._parameter_store:
+            return self._parameter_store[key]
         return None
 
     def _on_run(self):

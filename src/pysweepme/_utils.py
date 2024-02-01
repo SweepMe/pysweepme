@@ -22,7 +22,7 @@ def _is_version_reached(version: str) -> bool:
     version_tuple = tuple(map(int, version.split(".")))
     # zip and un-zip the version tuples to make them same length
     version_tuple, compare = zip(*zip_longest(version_tuple, _pysweepme_version, fillvalue=0))
-    if version_tuple < compare:
+    if version_tuple > compare:
         return False
     return True
 
