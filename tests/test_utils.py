@@ -34,7 +34,7 @@ class TestDeprecated:
             assert my_func() == "success"
             assert mocked_debug.call_count == 1
             debug_msg = mocked_debug.call_args_list[0].args[0]
-            assert re.search(r"my_func .* deprecated .* removed .* Do not use.", debug_msg)
+            assert re.search(r"my_func\(\) .* deprecated .* removed .* Do not use\..*", debug_msg)
 
     def test_deprecated_decorator_on_method(self) -> None:
         """Test deprecated decorator for function of a class."""
@@ -50,7 +50,7 @@ class TestDeprecated:
             assert MyClass().my_method() == "success"
             assert mocked_debug.call_count == 1
             debug_msg = mocked_debug.call_args_list[0].args[0]
-            assert re.search(r"my_method .* deprecated .* removed .* Do not use.", debug_msg)
+            assert re.search(r"my_method\(\) .* deprecated .* removed .* Do not use\..*", debug_msg)
 
     def test_deprecated_decorator_on_class(self) -> None:
         """Test deprecated decorator for function of a class."""
@@ -65,4 +65,4 @@ class TestDeprecated:
             assert my_class.check == "success"
             assert mocked_debug.call_count == 1
             debug_msg = mocked_debug.call_args_list[0].args[0]
-            assert re.search(r"MyClass .* deprecated .* removed .* Do not use.", debug_msg)
+            assert re.search(r"MyClass\(\) .* deprecated .* removed .* Do not use\..*", debug_msg)
