@@ -30,6 +30,7 @@ from configparser import ConfigParser
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from pysweepme._utils import deprecated
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
 from .FolderManager import getFoMa
@@ -144,16 +145,18 @@ class EmptyDevice:
         """
         return self._is_run_stopped
 
+    @deprecated("1.5.7", "Use get_folder() instead.")
     def get_Folder(self, identifier):
+        """Easy access to a folder without the need to import the FolderManager."""
+        return self.get_folder(identifier)
+
+    def get_folder(self, identifier):
         """Easy access to a folder without the need to import the FolderManager."""
         if identifier == "SELF":
             return os.path.abspath(os.path.dirname(inspect.getfile(self.__class__)))
         return getFoMa().get_path(identifier)
 
-    def get_folder(self, identifier):
-        """Same function like get_Folder but more python style."""
-        return self.get_Folder(identifier)
-
+    @deprecated("1.5.7", "Use is_configfile() instead.")
     def isConfigFile(self):
         """deprecated: remains for compatibility reasons."""
         return self.is_configfile()
@@ -166,13 +169,15 @@ class EmptyDevice:
             return True
         return False
 
+    @deprecated("1.5.7", "Use get_configsections() instead.")
     def getConfigSections(self):
         """deprecated: remains for compatibility reasons."""
         return self.get_configsections()
 
     def get_configsections(self):
-        """This function returns all sections of the driver related config file. If not file exists, an empty list
-        is returned.
+        """This function returns all sections of the driver related config file.
+
+        If not file exists, an empty list is returned.
 
         Returns:
             List of Strings
@@ -181,12 +186,14 @@ class EmptyDevice:
             return _config.sections()
         return []
 
+    @deprecated("1.5.7", "Use get_configoptions() instead.")
     def getConfigOptions(self, section):
         """deprecated: remains for compatibility reasons."""
         return self.get_configoptions(section)
 
     def get_configoptions(self, section):
         """This functions returns all key-value options of a given section of the driver related config file.
+
         If the file does not exist, an empty dictionary is returned.
 
         Args:
@@ -201,6 +208,7 @@ class EmptyDevice:
                 vals[key] = _config[section][key]
         return vals
 
+    @deprecated("1.5.7", "Use get_config() instead.")
     def getConfig(self):
         """deprecated: remains for compatibility reasons."""
         return self.get_config()
@@ -299,25 +307,19 @@ class EmptyDevice:
     # def get_CalibrationFile_properties(self, port = ""):
 
     def connect(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def disconnect(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def initialize(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def deinitialize(self):
-        """Function to be overloaded if needed."""
-
-    def poweron(self):
-        """Function to be overloaded if needed."""
-
-    def poweroff(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def reconfigure(self, parameters={}, keys=[]):
-        """Function to be overloaded if needed.
+        """Function to be overridden if needed.
 
         if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigure.
         Default behavior is that all parameters are set again and 'configure' is called.
@@ -327,28 +329,34 @@ class EmptyDevice:
         self.configure()
 
     def configure(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def unconfigure(self):
-        """Function to be overloaded if needed."""
-        ## TODO: should be removed in future as these lines are anyway not performed if the function is overloaded
+        """Function to be overridden if needed."""
+        ## TODO: should be removed in future as these lines are anyway not performed if the function is overridden
         if self.idlevalue is not None:
             self.value = self.idlevalue
 
+    def poweron(self):
+        """Function to be overridden if needed."""
+
+    def poweroff(self):
+        """Function to be overridden if needed."""
+
     def signin(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def signout(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def _transfer(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def start(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def apply(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def reach(self) -> None:
         """Actively wait until the applied value is reached.
@@ -357,38 +365,32 @@ class EmptyDevice:
         """
 
     def adapt(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def adapt_ready(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def trigger_ready(self):
-        """Function to be overloaded if needed."""
-
-    def trigger(self):  # deprecated
-        pass
+        """Function to be overridden if needed."""
 
     def measure(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def request_result(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def read_result(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def process_data(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     def call(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
         return [float("nan") for x in self.variables]
 
-    def process(self):
-        """Function to be overloaded if needed."""
-
     def finish(self):
-        """Function to be overloaded if needed."""
+        """Function to be overridden if needed."""
 
     # def set_Parameter(self,feature,value): # not used yet
     # pass
