@@ -182,7 +182,7 @@ class EmptyDevice:
         Returns:
             List of Strings
         """
-        if self.isConfigFile():
+        if self.is_configfile():
             return _config.sections()
         return []
 
@@ -203,7 +203,7 @@ class EmptyDevice:
             dict with pairs of key-value options
         """
         vals = {}
-        if self.isConfigFile() and section in _config:
+        if self.is_configfile() and section in _config:
             for key in _config[section]:
                 vals[key] = _config[section][key]
         return vals
@@ -217,7 +217,7 @@ class EmptyDevice:
         """This function returns a representation of the driver related config file by means of a nested dictionary
         that contains for each section a dictionary with the options.
         """
-        return {section: self.getConfigOptions(section) for section in self.getConfigSections()}
+        return {section: self.get_configoptions(section) for section in self.get_configsections()}
 
     def get_GUIparameter(self, parameter):
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
