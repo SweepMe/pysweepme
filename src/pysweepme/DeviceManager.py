@@ -23,6 +23,7 @@
 
 import imp
 import os
+import types
 from pathlib import Path
 
 from ._utils import deprecated
@@ -50,7 +51,48 @@ def get_main_py_path(path: str) -> str:
     return path + os.sep + "main.py"
 
 
-def instantiate_device(folder: str, name: str) -> EmptyDevice:
+def get_driver_module(folder: str, name: str) -> types.ModuleType:
+    """Load the module containing the requested driver.
+
+    Args:
+        folder: The folder containing the drivers.
+        name: The name of the driver
+
+    Returns:
+        The loaded module containing the requested driver.
+    """
+    if folder == "":
+        folder = "."
+    name = name.strip(r"\/")
+
+    try:
+        # Loads .py file as module
+        module = imp.load_source(name, get_main_py_path(folder + os.sep + name))
+    except Exception as e:  # noqa: BLE001
+        # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
+        error()
+        msg = f"Cannot load Driver '{name}' from folder {folder}. Please change folder or copy Driver to your project."
+        raise ImportError(msg) from e
+
+    return module
+
+
+def get_driver_class(folder: str, name: str) -> type[EmptyDevice]:
+    """Get the class (not an instance) of the requested driver.
+
+    Args:
+        folder: The folder containing the drivers.
+        name: The name of the driver
+
+    Returns:
+        The class of the requested driver.
+    """
+    module = get_driver_module(folder, name)
+    driver: type[EmptyDevice] = module.Device
+    return driver
+
+
+def get_driver_instance(folder: str, name: str) -> EmptyDevice:
     """Create a bare driver instance.
 
     Create a bare driver instance without input cleanup and without setting GUI parameters.
@@ -62,21 +104,37 @@ def instantiate_device(folder: str, name: str) -> EmptyDevice:
     Returns:
         Device object of the driver.
     """
-    try:
-        # Loads .py file as module
-        module = imp.load_source(name, get_main_py_path(folder + os.sep + name))
-    except Exception as e:  # noqa: BLE001
-        # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
-        error()
-        msg = f"Cannot load Driver '{name}' from folder {folder}. Please change folder or copy Driver to your project."
-        raise ImportError(msg) from e
+    driver_class = get_driver_class(folder, name)
+    return driver_class()
 
-    device: EmptyDevice = module.Device()
-    return device
+
+def setup_driver(driver: EmptyDevice, name: str, port_string: str) -> None:
+    """Set port and device.
+
+    The GUI parameters Device and Port (if provided) are set.
+    When using the Port Manager, the port object is attached to the driver.
+
+    Args:
+        driver: The driver instance.
+        name: The name of the driver.
+        port_string: The string defining the port to use for the driver.
+    """
+    if port_string != "":
+        if driver.port_manager:
+            port = get_port(port_string, driver.port_properties)
+            driver.set_port(port)
+
+        driver.set_parameters({"Port": port_string, "Device": name})
+
+    else:
+        driver.set_parameters({"Device": name})
 
 
 def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
     """Create a driver instance.
+
+    When the driver uses the port manager, the port will already be opened, but the connect() function of
+    the driver must be called in any case.
 
     Args:
         name: Name of the driver being the name of the driver folder
@@ -88,26 +146,12 @@ def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
     Returns:
         Initialized Device object of the driver with port and default parameters set.
     """
-    if folder == "":
-        folder = "."
-    if name.startswith(os.sep):
-        name = name[1:]
-    if name.endswith(os.sep):
-        name = name[:-1]
+    name = name.strip(r"\/")
 
-    device = instantiate_device(folder, name)
+    driver = get_driver_instance(folder, name)
+    setup_driver(driver, name, port_string)
 
-    if port_string != "":
-        if device.port_manager:
-            port = get_port(port_string, device.port_properties)
-            device.set_port(port)
-
-        device.set_parameters({"Port": port_string, "Device": name})
-
-    else:
-        device.set_parameters({"Device": name})
-
-    return device
+    return driver
 
 
 get_device = deprecated("1.5.8", "Use get_driver() instead.", name="get_device")(get_driver)
