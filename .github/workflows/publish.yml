@@ -56,6 +56,7 @@ jobs:
       run: |
         twine upload --repository-url ${{ vars.PYPI_API_ENDPOINT }} dist/*
     - name: Tag commit
+      id: tag_commit
       if: ${{ (github.ref_name == 'main') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
       run: |
         pip install --no-index --no-deps --find-links=dist/ pysweepme
@@ -64,8 +65,18 @@ jobs:
         {
           Throw "Inspected version $PysweepmeVersion could not be found in any wheels in the dist folder."
         }
-        $TagName = "Release-${PysweepmeVersion}_(${{ inputs.targetenv || 'testpypi' }})"
+        $TagName = "v${PysweepmeVersion}"
         git tag $TagName
         git push origin $TagName
+        "PysweepmeVersion=${PysweepmeVersion}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "TagName=${TagName}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
       shell: pwsh
-        
+    - name: Create github release
+      if: ${{ (github.ref_name == 'main') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "dist/*"
+        generateReleaseNotes: true
+        makeLatest: true
+        name: ${{ format('pysweepme {0}', steps.tag_commit.outputs.PysweepmeVersion) }}
+        tag: ${{ steps.tag_commit.outputs.TagName }}
