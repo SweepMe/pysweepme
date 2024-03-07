@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pysweepme.DeviceManager import get_driver, get_main_py_path, instantiate_device
+from pysweepme.DeviceManager import get_driver, get_driver_instance, get_main_py_path
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
 BITNESS_DISCRIMINATOR = 0x100000000
@@ -37,9 +37,10 @@ class TestDeviceManager:
             specific_exists = False
             assert get_main_py_path(path) == "C:\\my_dc_dir\\main.py"
 
-    def test_instantiate(self) -> None:
+    def test_get_driver_instance(self) -> None:
         """Test that indeed a device instance is returned."""
-        folder = "C:\\search"
+        folder = ""
+        expected_folder = "."
         name = "my_device"
         found_path = "C:\\found\\main.py"
 
@@ -51,12 +52,12 @@ class TestDeviceManager:
         ) as mocked_get_main_py_path:
             mocked_load_soure.return_value = LoadSource
             mocked_get_main_py_path.return_value = found_path
-            device = instantiate_device(folder, name)
+            device = get_driver_instance(folder, name)
             assert isinstance(device, CustomDevice)
             assert mocked_load_soure.call_count == 1
             assert mocked_load_soure.call_args_list[0].args == (name, found_path)
             assert mocked_get_main_py_path.call_count == 1
-            assert mocked_get_main_py_path.call_args_list[0].args == (f"{folder}\\{name}",)
+            assert mocked_get_main_py_path.call_args_list[0].args == (f"{expected_folder}\\{name}",)
 
     def test_get_driver(self) -> None:
         """Test that get_driver gets the instance and sets the necessery parameters Device and Port, if applicable."""
@@ -64,18 +65,16 @@ class TestDeviceManager:
 
         def run_test(folder: str, expected_folder: str, port: str) -> None:
             device = CustomDevice()
-            with patch("DeviceManager.instantiate_device") as mocked_instantiate_device:
+            with patch("DeviceManager.get_driver_instance") as mocked_get_driver_instance:
                 device.set_parameters = MagicMock()  # type: ignore[method-assign]
-                mocked_instantiate_device.return_value = device
+                mocked_get_driver_instance.return_value = device
                 returned_driver = get_driver(name, folder, port_string=port)
                 assert returned_driver is device
-                assert mocked_instantiate_device.call_count == 1
-                assert mocked_instantiate_device.call_args_list[0].args == (expected_folder, name)
+                assert mocked_get_driver_instance.call_count == 1
+                assert mocked_get_driver_instance.call_args_list[0].args == (expected_folder, name)
                 assert device.set_parameters.call_count == 1
                 expected_gui_params = {"Device": name, "Port": port} if port else {"Device": name}
                 assert device.set_parameters.call_args_list[0].args == (expected_gui_params,)
 
         run_test("C:\\my_dc_dir", "C:\\my_dc_dir", "")
-        run_test(".", ".", "")
-        run_test("", ".", "")
         run_test(".", ".", "COM007")
