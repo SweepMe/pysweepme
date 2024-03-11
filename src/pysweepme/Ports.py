@@ -249,7 +249,8 @@ def get_port(ID, properties={}):
         # in open(), port_properties can further be changed by global PortDialog settings
         port.open()
 
-    # print(port.port_properties)
+    if port.port_properties["clear"]:
+        port.clear()
 
     return port
 
@@ -283,6 +284,7 @@ class PortType(object):
         "delay": 0.0,
         "rstrip": True,
         "debug": False,
+        "clear": True,
     }
 
     def __init__(self):
@@ -524,6 +526,7 @@ class Port(object):
             "type": type(self).__name__[:-4],  # removeing port from the end of the port
             "active": True,
             "open": False,
+            "clear": True,
             "Name": None,
             "NrDevices": 0,
             "debug": False,

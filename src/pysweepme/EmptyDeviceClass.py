@@ -307,7 +307,7 @@ class EmptyDevice:
     # def get_CalibrationFile_properties(self, port = ""):
 
     def connect(self):
-        """Function to be overridden if needed."""
+        """Function to be overridden if needed and not using the port manager."""
 
     def disconnect(self):
         """Function to be overridden if needed."""
