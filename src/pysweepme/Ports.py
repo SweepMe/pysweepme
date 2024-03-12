@@ -1045,10 +1045,6 @@ class COMport(Port):
             self.port.close()
             self.port.open()
 
-        # for normal COM ports, the clear will only clear the buffer without sending commands to the instrument,
-        # so it is safe to use.
-        self.clear_internal()
-
     def close_internal(self):
         self.port.close()
         self.port_properties["open"] = False
