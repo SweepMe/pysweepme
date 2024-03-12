@@ -249,7 +249,8 @@ def get_port(ID, properties={}):
         # in open(), port_properties can further be changed by global PortDialog settings
         port.open()
 
-    # print(port.port_properties)
+    if port.port_properties["clear"]:
+        port.clear()
 
     return port
 
@@ -283,6 +284,7 @@ class PortType(object):
         "delay": 0.0,
         "rstrip": True,
         "debug": False,
+        "clear": True,
     }
 
     def __init__(self):
@@ -521,13 +523,22 @@ class Port(object):
         self.port = None
         self.port_ID = ID
         self.port_properties = {
-            "type": type(self).__name__[:-4],  # removeing port from the end of the port
+            # The Port Type, e.g. "COM", "GPIB"
+            "type": type(self).__name__[:-4],  # removing "port" from the end of the port
+            # Do not use active
             "active": True,
+            # Whether the port is currently opened
             "open": False,
+            # If the port shall be cleared at the beginning of a measurement (after it is opened)
+            "clear": True,
+            # Do not use Name
             "Name": None,
+            # Deprecated, use device_communication instead
             "NrDevices": 0,
+            # Enable debugging output for the port
             "debug": False,
-            "ID": self.port_ID,  # String to open the device 'COM3', 'GPIB0::1::INSTR', ...
+            # String identifying the port to open 'COM3', 'GPIB0::1::INSTR', ...
+            "ID": self.port_ID,
         }
 
         self.initialize_port_properties()
@@ -1041,10 +1052,6 @@ class COMport(Port):
         else:
             self.port.close()
             self.port.open()
-
-        # for normal COM ports, the clear will only clear the buffer without sending commands to the instrument,
-        # so it is safe to use.
-        self.clear_internal()
 
     def close_internal(self):
         self.port.close()

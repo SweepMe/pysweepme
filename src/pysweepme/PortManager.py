@@ -192,8 +192,7 @@ class PortManager(object):
             self._ports[resource].update_properties(properties)
 
         # port is checked if being open and if not, port is opened
-        if self._ports[resource].port_properties["open"] is False:
-            self._ports[resource].open()
+        self.open_port(resource)
 
         return self._ports[resource]
 
@@ -289,8 +288,8 @@ class PortManager(object):
         """
         if resource not in self._ports:
             self._ports[resource] = Ports.get_port(resource)
-        
-        self._ports[resource].open()
+
+        self.open_port(resource)
         identification = self._ports[resource].get_identification()
         self._ports[resource].close()
         self.close_resourcemanager()
@@ -307,6 +306,9 @@ class PortManager(object):
         """
         if self._ports[resource].port_properties["open"] is False:
             self._ports[resource].open()
+
+            if self._ports[resource].port_properties["clear"]:
+                self._ports[resource].clear()
 
     def close_port(self, resource: str) -> None:
         """

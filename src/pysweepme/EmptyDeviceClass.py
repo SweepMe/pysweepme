@@ -31,7 +31,6 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pysweepme._utils import deprecated
-from pysweepme.Ports import Port
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
 from .FolderManager import getFoMa
@@ -300,15 +299,6 @@ class EmptyDevice:
     def get_port(self):
         return self.port
 
-    def clear_port(self) -> None:
-        """Send clear command to the port object if the port manager is used.
-
-        If clearing is not desired for a specific instrument, the driver can override this method and run
-        alternative steps or do nothing at all.
-        """
-        if self.port_manager and hasattr(self, "port") and isinstance(self.port, Port):
-            self.port.clear()
-
     ## can be used by device class to be triggered by button find_Ports
     # def find_Ports(self):
 
@@ -317,12 +307,7 @@ class EmptyDevice:
     # def get_CalibrationFile_properties(self, port = ""):
 
     def connect(self):
-        """Function to be overridden if needed.
-
-        If overriding the connect() function in your driver, but at the same time using the port manager, you should
-        call `super().connect()` in your connect() function.
-        """
-        self.clear_port()
+        """Function to be overridden if needed and not using the port manager."""
 
     def disconnect(self):
         """Function to be overridden if needed."""
