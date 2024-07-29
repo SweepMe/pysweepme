@@ -5,13 +5,17 @@ instruments is handled via instrument drivers ("Device Classes"), that are pytho
 
 ## Installation
 So far, only Windows is supported. Other systems might work as well but probably some modifications are needed.
+We recommend to use Python 3.9 64bit, as this is the python version and architecture targeted by us. In addition,
+several drivers in our [instrument driver repository](https://github.com/SweepMe/instrument-drivers) bring their own
+dependencies which are bundled for Python 3.9.
+
 Use the command line (cmd) to install/uninstall:
 
 ### install
     pip install pysweepme 
 
 ### install with force version
-    pip install pysweepme==1.5.5.45
+    pip install pysweepme==1.5.6.10
 
 ### uninstall
     pip uninstall pysweepme
