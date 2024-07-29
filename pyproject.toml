@@ -2,7 +2,7 @@
 name = "pysweepme"
 description = "Load SweepMe! instrument drivers in your own python projects."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.12"
 license = { file = "LICENSE.txt" }
 maintainers = [
     { name = "SweepMe! GmbH", email = "contact@sweep-me.net" },
