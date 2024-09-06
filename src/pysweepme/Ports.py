@@ -1169,6 +1169,18 @@ class COMport(Port):
 
         return bytes(line[:-leneol]), eol_found
 
+    def get_identification(self) -> str:
+
+        ports = serial.tools.list_ports.comports()
+
+        port_info = "No info available"
+        for port in ports:
+            if port.device == self.port_ID:
+                port_info = port.hwid
+                break
+
+        return port_info
+
 
 class PrologixGPIBcontroller:
 
