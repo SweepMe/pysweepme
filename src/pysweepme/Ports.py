@@ -1170,12 +1170,21 @@ class COMport(Port):
         return bytes(line[:-leneol]), eol_found
 
     def get_identification(self) -> str:
+        """Get details of the COM port.
 
+        In contrast to the other get_identification functions which return instrument identifications, this
+        function returns details about the COM Port (or USB-COM adapter if one is used) itself.
+        Therefore this should be considered an unstable feature that might be changed in the future.
+
+        Returns:
+            The hwid of the COM port.
+        """
         ports = serial.tools.list_ports.comports()
 
         port_info = "No info available"
         for port in ports:
             if port.device == self.port_ID:
+                debug("Identification for COM ports is an experimental feature and will probably change in the future.")
                 port_info = port.hwid
                 break
 
