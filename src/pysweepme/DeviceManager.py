@@ -30,7 +30,7 @@ from ._utils import deprecated
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
-from .Ports import get_port
+from .PortManager import PortManager
 
 
 def get_main_py_path(path: str) -> str:
@@ -121,7 +121,8 @@ def setup_driver(driver: EmptyDevice, name: str, port_string: str) -> None:
     """
     if port_string != "":
         if driver.port_manager:
-            port = get_port(port_string, driver.port_properties)
+            port_manager = PortManager()
+            port = port_manager.get_port(port_string, driver.port_properties)
             driver.set_port(port)
 
         driver.set_parameters({"Port": port_string, "Device": name})
