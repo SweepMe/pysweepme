@@ -219,12 +219,71 @@ class EmptyDevice:
         """
         return {section: self.get_configoptions(section) for section in self.get_configsections()}
 
-    def get_GUIparameter(self, parameter):
+    def get_GUIparameter(self, parameter: dict[str, Any]):
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
 
     def set_GUIparameter(self) -> dict[str, Any]:
         """Is overwritten by Device Class to set the GUI parameter a user can select."""
         return {}
+
+    def update_gui_parameters_with_defaults(self, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Update the driver's current parameters with the given values and return the parameters.
+
+        This is a helper function that ensures compatibility with simple drivers. When the GUI parameters
+        passed to the update_gui_parameters function don't cover all parameters required by simple drivers,
+        the driver might raise an Exception because a required key is not found. This helper solves the issue
+        by enhancing any missing GUI parameter with the respective default of the driver.
+        For advanced drivers, this helper may also add fields, but the advanced driver should be intelligent
+        enough to only extract the values that are required.
+
+        Drivers should not overwrite this function.
+
+        Args:
+            parameters: A dictionary where keys correspond to the GUI parameter name and the value is
+                        the value as specified in the GUI.
+                        When parameters is None, nothing shall be updated and instead only the defaults shall
+                        be returned.
+
+        Returns:
+            A dictionary where the keys are the fields that shall be shown in the GUI and the values are
+            the default value. Simple drivers will always return the same defaults.
+        """
+        # Note to developers:
+        # The "enhance with defaults" is necessary, because when switching the driver in SweepMe!,
+        # SweepMe! will pass the GUI parameters of the previous driver to the new driver, which
+        # obviously doesn't match. Once this behaviour is fixed, this function won't be needed any longer.
+        # This behaviour does not impact the correctness of the operation, as a second call to update the
+        # GUI parameters will pass the correct parameters to the driver anyway.
+        if parameters is not None:
+            default_parameters = {k: v[0] if isinstance(v, list) and len(v) > 0 else v
+                                  for k, v in self.update_gui_parameters().items()}
+            parameters = default_parameters | parameters
+        return self.update_gui_parameters(parameters)
+
+    def update_gui_parameters(self, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Update the driver's current parameters with the given values and return the parameters.
+
+        The driver's parameters are updated with the values that are passed to this function.
+        The function will then return a dictionary with keys and defaults that correspond to
+        the current parameter state. Most (simple) drivers will always return the default
+        GUI parameters. More advanced drivers might return different GUI fields depending on
+        certain conditions, like other GUI parameters or instrument identification / capabilities.
+
+        Args:
+            parameters: A dictionary where keys correspond to the GUI parameter name and the value is
+                        the value as specified in the GUI. Advanced drivers (where GUI fields can change)
+                        must be able to handle incomplete dictionaries (i.e. only certain keys are provided)
+                        and complete them to a valid configuration.
+                        When parameters is None, nothing shall be updated and instead only the defaults shall
+                        be returned.
+
+        Returns:
+            A dictionary where the keys are the fields that shall be shown in the GUI and the values are
+            the default value. Simple drivers will always return the same defaults.
+        """
+        if parameters:
+            self.get_GUIparameter(parameters)
+        return self.set_GUIparameter()
 
     def reset_latest_parameters(self) -> None:
         """Initialize or reset the saved parameters to their default.
@@ -235,7 +294,7 @@ class EmptyDevice:
         """
         previous_parameters = self._latest_parameters or {}
         # we need to do a deepcopy. If the driver has it's defaults in a dictionary, we do not want to change it
-        self._latest_parameters = deepcopy(self.set_GUIparameter())
+        self._latest_parameters = deepcopy(self.update_gui_parameters())
 
         # if the default for a property is a list (user shall choose one), we use the first element as the default
         for key, default in self._latest_parameters.items():
@@ -275,7 +334,7 @@ class EmptyDevice:
                     )
                     raise ValueError(msg)
 
-            self.get_GUIparameter(self._latest_parameters)
+            self.update_gui_parameters(self._latest_parameters)
 
     def get_parameters(self) -> dict[str, Any]:
         """Retrieve the parameters that are currently saved for the device.
@@ -325,7 +384,7 @@ class EmptyDevice:
         Default behavior is that all parameters are set again and 'configure' is called.
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure.
         """
-        self.get_GUIparameter(parameters)
+        self.update_gui_parameters(parameters)
         self.configure()
 
     def configure(self):
