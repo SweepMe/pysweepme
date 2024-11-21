@@ -226,6 +226,17 @@ class EmptyDevice:
         """Is overwritten by Device Class to set the GUI parameter a user can select."""
         return {}
 
+    def update_gui_parameters_wrapper(self, parameters: dict | None = None) -> dict:
+        if parameters is not None:
+            default_parameters = {k: v[0] if isinstance(v, list) and len(v) > 0 else v for k, v in self.update_gui_parameters().items()}
+            parameters = default_parameters | parameters
+        return self.update_gui_parameters(parameters)
+
+    def update_gui_parameters(self, parameters: dict | None = None) -> dict:
+        if parameters:
+            self.get_GUIparameter(parameters)
+        return self.set_GUIparameter()
+
     def reset_latest_parameters(self) -> None:
         """Initialize or reset the saved parameters to their default.
 
