@@ -71,7 +71,9 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
     except Exception as e:  # noqa: BLE001
         # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
         error()
-        msg = f"Cannot load Driver '{name}' from folder {folder}. Please change folder or copy Driver to your project."
+        msg = f"Cannot load Driver '{name}' from folder {folder}."
+        if isinstance(e, FileNotFoundError):
+            msg += " Please change folder or copy Driver to your project."
         raise ImportError(msg) from e
 
     return module
