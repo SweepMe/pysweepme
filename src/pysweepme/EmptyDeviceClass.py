@@ -235,6 +235,8 @@ class EmptyDevice:
         by enhancing any missing GUI parameter with the respective default of the driver.
         For advanced drivers, this helper may also add fields, but the advanced driver should be intelligent
         enough to only extract the values that are required.
+        Additionally, None-Type parameters (e.g. from the Parameter Syntax) are replaced with the defaults
+        as well.
 
         Drivers should not overwrite this function.
 
@@ -256,11 +258,11 @@ class EmptyDevice:
         # GUI parameters will pass the correct parameters to the driver anyway.
         if parameters is not None:
             default_parameters = {k: v[0] if isinstance(v, list) and len(v) > 0 else v
-                                  for k, v in self.update_gui_parameters().items()}
-            parameters = default_parameters | parameters
-        return self.update_gui_parameters(parameters)
+                                  for k, v in self.update_gui_parameters({}).items()}
+            parameters = default_parameters | { k: v for k, v in parameters.items() if v is not None}
+        return self.update_gui_parameters(parameters or {})
 
-    def update_gui_parameters(self, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Update the driver's current parameters with the given values and return the parameters.
 
         The driver's parameters are updated with the values that are passed to this function.
@@ -274,8 +276,8 @@ class EmptyDevice:
                         the value as specified in the GUI. Advanced drivers (where GUI fields can change)
                         must be able to handle incomplete dictionaries (i.e. only certain keys are provided)
                         and complete them to a valid configuration.
-                        When parameters is None, nothing shall be updated and instead only the defaults shall
-                        be returned.
+                        When parameters is an empty dictionary, nothing shall be updated
+                        and instead only the defaults shall be returned.
 
         Returns:
             A dictionary where the keys are the fields that shall be shown in the GUI and the values are
@@ -294,7 +296,7 @@ class EmptyDevice:
         """
         previous_parameters = self._latest_parameters or {}
         # we need to do a deepcopy. If the driver has it's defaults in a dictionary, we do not want to change it
-        self._latest_parameters = deepcopy(self.update_gui_parameters())
+        self._latest_parameters = deepcopy(self.update_gui_parameters({}))
 
         # if the default for a property is a list (user shall choose one), we use the first element as the default
         for key, default in self._latest_parameters.items():
@@ -334,7 +336,7 @@ class EmptyDevice:
                     )
                     raise ValueError(msg)
 
-            self.update_gui_parameters(self._latest_parameters)
+            self.update_gui_parameters(self._latest_parameters or {})
 
     def get_parameters(self) -> dict[str, Any]:
         """Retrieve the parameters that are currently saved for the device.
