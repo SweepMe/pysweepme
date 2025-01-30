@@ -251,6 +251,8 @@ class EmptyDevice:
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
         # Used for compatibility with old code that still uses get_GUIparameter
         if self.uses_update_gui_parameters:
+            if parameter:
+                self.apply_gui_parameters(parameter)
             self.update_gui_parameters(parameter)
 
     def set_GUIparameter(self) -> dict[str, Any]:
@@ -308,12 +310,24 @@ class EmptyDevice:
             default_parameters = {k: v[0] if isinstance(v, list) and len(v) > 0 else v
                                   for k, v in self.update_gui_parameters({}).items()}
             parameters = default_parameters | { k: v for k, v in parameters.items() if v is not None}
+        if parameters:
+            self.apply_gui_parameters(parameters)
         return self.update_gui_parameters(parameters or {})
 
-    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        """Update the driver's current parameters with the given values and return the parameters.
+    def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
+        """Apply the given parameters to the driver instance.
 
-        The driver's parameters are updated with the values that are passed to this function.
+        Args:
+            parameters: A dictionary where keys correspond to the GUI parameter name and the value is
+                        the value as specified in the GUI. Drivers
+                        must be able to handle incomplete or invalid dictionaries (i.e. only certain keys are provided)
+                        and complete them to a valid configuration.
+        """
+
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002 - defines signature
+        """Determine the new GUI parameters of the driver depending on the current parameters.
+
+        The available driver's parameters are updated depending on the values that are passed to this function.
         The function will then return a dictionary with keys and defaults that correspond to
         the current parameter state. Most (simple) drivers will always return the default
         GUI parameters. More advanced drivers might return different GUI fields depending on
@@ -321,8 +335,8 @@ class EmptyDevice:
 
         Args:
             parameters: A dictionary where keys correspond to the GUI parameter name and the value is
-                        the value as specified in the GUI. Advanced drivers (where GUI fields can change)
-                        must be able to handle incomplete dictionaries (i.e. only certain keys are provided)
+                        the value as specified in the GUI. Drivers
+                        must be able to handle incomplete or invalid dictionaries (i.e. only certain keys are provided)
                         and complete them to a valid configuration.
                         When parameters is an empty dictionary, nothing shall be updated
                         and instead only the defaults shall be returned.
@@ -345,7 +359,10 @@ class EmptyDevice:
         """
         previous_parameters = self._latest_parameters or {}
         # we need to do a deepcopy. If the driver has it's defaults in a dictionary, we do not want to change it
-        self._latest_parameters = deepcopy(self.update_gui_parameters({}))
+        if self.uses_update_gui_parameters:
+            self._latest_parameters = deepcopy(self.update_gui_parameters({}))
+        else:
+            self._latest_parameters = deepcopy(self.set_GUIparameter())
 
         # if the default for a property is a list (user shall choose one), we use the first element as the default
         for key, default in self._latest_parameters.items():
@@ -385,7 +402,12 @@ class EmptyDevice:
                     )
                     raise ValueError(msg)
 
-            self.update_gui_parameters(self._latest_parameters or {})
+            if self.uses_update_gui_parameters:
+                if self._latest_parameters:
+                    self.apply_gui_parameters(self._latest_parameters)
+                self.update_gui_parameters(self._latest_parameters)
+            else:
+                self.get_GUIparameter(self._latest_parameters)
 
     def get_parameters(self) -> dict[str, Any]:
         """Retrieve the parameters that are currently saved for the device.
@@ -435,7 +457,12 @@ class EmptyDevice:
         Default behavior is that all parameters are set again and 'configure' is called.
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure.
         """
-        self.update_gui_parameters(parameters)
+        if self.uses_update_gui_parameters:
+            if parameters:
+                self.apply_gui_parameters(parameters)
+            self.update_gui_parameters(parameters)
+        else:
+            self.get_GUIparameter(parameters)
         self.configure()
 
     def configure(self):
