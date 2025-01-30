@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import inspect
 import os
 from configparser import ConfigParser
@@ -75,6 +76,33 @@ class EmptyDevice:
         self.tempfolder = self.get_folder("TEMP")
 
         self._latest_parameters: dict[str, Any] | None = None
+
+    def is_function_overwritten(self, function: str) -> bool:
+        """Test if a given function is overwritten in a child class of EmptyDevice.
+
+        Args:
+            function: The name of the function to check.
+
+        Returns:
+            True, if the function is overwritten in a child class, False otherwise.
+        """
+        overwrites = False
+        # Get the class and a list of all base classes in the order python would resolve functions
+        # using getmro(). If function is element of the classes dictionary and a function, BEFORE looking into
+        # the EmptyDevice class, then function was obviously overridden by a subclass.
+        for cls in inspect.getmro(self.__class__):
+            if cls is EmptyDevice:
+                break
+            if function in cls.__dict__ and callable(getattr(cls, function, None)):
+                overwrites = True
+                break
+
+        return overwrites
+
+    @functools.cached_property
+    def uses_update_gui_parameters(self) -> bool:
+        """Boolean that tells if the driver uses the new update_gui_parameters function."""
+        return self.is_function_overwritten(self.update_gui_parameters.__name__)
 
     @property
     def device_communication(self) -> dict[str, Any]:
@@ -221,12 +249,20 @@ class EmptyDevice:
 
     def get_GUIparameter(self, parameter: dict[str, Any]):
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
+        # Used for compatibility with old code that still uses get_GUIparameter
+        if self.uses_update_gui_parameters:
+            self.update_gui_parameters(parameter)
 
     def set_GUIparameter(self) -> dict[str, Any]:
         """Is overwritten by Device Class to set the GUI parameter a user can select."""
+        # Used for compatibility with old code that still uses set_GUIparameter
+        if self.uses_update_gui_parameters:
+            return self.update_gui_parameters({})
         return {}
 
-    def update_gui_parameters_with_defaults(self, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+    def update_gui_parameters_with_fallback(
+            self, reading_mode: bool, parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Update the driver's current parameters with the given values and return the parameters.
 
         This is a helper function that ensures compatibility with simple drivers. When the GUI parameters
@@ -241,6 +277,12 @@ class EmptyDevice:
         Drivers should not overwrite this function.
 
         Args:
+            reading_mode: When True, the purpose of this call is to get the default parameters of the driver.
+                          This means this function should call set_GUIparameter for old drivers, and
+                          update_gui_parameters for new drivers.
+                          When False, the purpose of this call is to apply the parameters passed to this function
+                          to the driver. This means this function should call get_GUIparameter for old drivers, and
+                          update_gui_parameters for new drivers.
             parameters: A dictionary where keys correspond to the GUI parameter name and the value is
                         the value as specified in the GUI.
                         When parameters is None, nothing shall be updated and instead only the defaults shall
@@ -250,6 +292,12 @@ class EmptyDevice:
             A dictionary where the keys are the fields that shall be shown in the GUI and the values are
             the default value. Simple drivers will always return the same defaults.
         """
+        if not self.uses_update_gui_parameters:
+            if reading_mode:
+                return self.set_GUIparameter()  # set_GUIparameter will actually get the parameters from the driver
+            self.get_GUIparameter(parameters or {})  # get_GUIparameter will actually apply the parameters
+            return {}
+
         # Note to developers:
         # The "enhance with defaults" is necessary, because when switching the driver in SweepMe!,
         # SweepMe! will pass the GUI parameters of the previous driver to the new driver, which
@@ -283,9 +331,10 @@ class EmptyDevice:
             A dictionary where the keys are the fields that shall be shown in the GUI and the values are
             the default value. Simple drivers will always return the same defaults.
         """
-        if parameters:
-            self.get_GUIparameter(parameters)
-        return self.set_GUIparameter()
+        msg = ("This driver does not implement the update_gui_parameters function. "
+               "use either set_GUIparameter and get_GUIparameter, "
+               "or call the update_gui_parameters_with_fallback function.")
+        raise NotImplementedError(msg)
 
     def reset_latest_parameters(self) -> None:
         """Initialize or reset the saved parameters to their default.
