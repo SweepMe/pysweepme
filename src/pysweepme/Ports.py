@@ -655,6 +655,11 @@ class Port(object):
         # if this function is not overwritten, it defines a fallback to read()
         return self.read(digits)
 
+    def query(self, cmd: str, digits: int = 0) -> str:
+        """Write a command to the port and read the response."""
+        self.write(cmd)
+        return self.read(digits=digits)
+
 
 class GPIBport(Port):
 
