@@ -610,7 +610,6 @@ class Port(object):
 
     def write_internal(self, cmd) -> None:
         """Function to be overwritten by each port to define how to write a command."""
-        pass
 
     def write_raw(self, cmd) -> None:
         """Write a command via a port without encoding."""
