@@ -600,7 +600,7 @@ class Port(object):
     def clear_internal(self) -> None:
         """Function to be overwritten by each port to device what is done during clear."""
 
-    def write(self, cmd) -> None:
+    def write(self, cmd: str) -> None:
         """Write a command via a port."""
         if self.port_properties["debug"]:
             debug(" ".join([self.port_properties["ID"], "write:", repr(cmd)]))
@@ -608,7 +608,7 @@ class Port(object):
         if cmd != "":
             self.write_internal(cmd)
 
-    def write_internal(self, cmd) -> None:
+    def write_internal(self, cmd: str) -> None:
         """Function to be overwritten by each port to define how to write a command."""
 
     def write_raw(self, cmd) -> None:
@@ -653,7 +653,7 @@ class Port(object):
         # if this function is not overwritten, it defines a fallback to read()
         return self.read(digits)
 
-    def query(self, cmd, digits: int = 0) -> str:
+    def query(self, cmd: str, digits: int = 0) -> str:
         """Write a command to the port and read the response."""
         self.write(cmd)
         return self.read(digits=digits)
