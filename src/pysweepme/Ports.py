@@ -600,31 +600,29 @@ class Port(object):
     def clear_internal(self) -> None:
         """Function to be overwritten by each port to device what is done during clear."""
 
-    def write(self, cmd):
-        """ write a command via a port"""
-
+    def write(self, cmd: str) -> None:
+        """Write a command via a port."""
         if self.port_properties["debug"]:
             debug(" ".join([self.port_properties["ID"], "write:", repr(cmd)]))
 
         if cmd != "":
             self.write_internal(cmd)
 
-    def write_internal(self, cmd):
-        pass
+    def write_internal(self, cmd: str) -> None:
+        """Function to be overwritten by each port to define how to write a command."""
 
-    def write_raw(self, cmd):
-        """ write a command via a port without encoding"""
-
+    def write_raw(self, cmd) -> None:
+        """Write a command via a port without encoding."""
         if cmd != "":
             self.write_raw_internal(cmd)
 
-    def write_raw_internal(self, cmd):
+    def write_raw_internal(self, cmd) -> None:
+        """Function to be overwritten by each port to define how to write a command without encoding."""
         # if this function is not overwritten, it defines a fallback to write()
         self.write(cmd)
 
-    def read(self, digits=0):
-        """ read a command from a port"""
-
+    def read(self, digits=0) -> str:
+        """Read a command from a port."""
         answer = self.read_internal(digits)
 
         # with 'raw_read', everything should be returned.
@@ -642,18 +640,23 @@ class Port(object):
 
         return answer
 
-    def read_internal(self, digits):
-        # has to be overwritten by each Port
+    def read_internal(self, digits: int) -> str:
+        """Function to be overwritten by each port to define how to read a command."""
         return ""
 
-    def read_raw(self, digits=0):
-        """ write a command via a port without encoding"""
-
+    def read_raw(self, digits: int = 0) -> str:
+        """Write a command via a port without encoding"""
         return self.read_raw_internal(digits)
 
-    def read_raw_internal(self, digits):
+    def read_raw_internal(self, digits: int) -> str:
+        """Function to be overwritten by each port to define how to read a command without encoding."""
         # if this function is not overwritten, it defines a fallback to read()
         return self.read(digits)
+
+    def query(self, cmd: str, digits: int = 0) -> str:
+        """Write a command to the port and read the response."""
+        self.write(cmd)
+        return self.read(digits=digits)
 
 
 class GPIBport(Port):
