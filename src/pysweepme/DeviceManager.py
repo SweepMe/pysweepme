@@ -110,8 +110,8 @@ def get_driver_instance(folder: str, name: str) -> EmptyDevice:
     driver_class = get_driver_class(folder, name)
 
     # Add the libs or library folder to the path before instantiating the driver
-    libs_path = Path(folder) / name
-    addFolderToPATH(str(libs_path))
+    driver_path = Path(folder) / name
+    addFolderToPATH(str(driver_path))
 
     return driver_class()
 
