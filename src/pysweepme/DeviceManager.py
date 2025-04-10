@@ -30,6 +30,7 @@ from ._utils import deprecated
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
+from .FolderManager import addFolderToPATH
 from .PortManager import PortManager
 
 
@@ -107,6 +108,11 @@ def get_driver_instance(folder: str, name: str) -> EmptyDevice:
         Device object of the driver.
     """
     driver_class = get_driver_class(folder, name)
+
+    # Add the libs or library folder to the path before instantiating the driver
+    driver_path = Path(folder) / name
+    addFolderToPATH(str(driver_path))
+
     return driver_class()
 
 
