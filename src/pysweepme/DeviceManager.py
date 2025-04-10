@@ -31,6 +31,7 @@ from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .PortManager import PortManager
+from .FolderManager import addFolderToPATH
 
 
 def get_main_py_path(path: str) -> str:
@@ -107,6 +108,11 @@ def get_driver_instance(folder: str, name: str) -> EmptyDevice:
         Device object of the driver.
     """
     driver_class = get_driver_class(folder, name)
+
+    # Add the libs or library folder to the path before instantiating the driver
+    libs_path = Path(folder) / name
+    addFolderToPATH(str(libs_path))
+
     return driver_class()
 
 
