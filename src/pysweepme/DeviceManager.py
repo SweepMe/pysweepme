@@ -30,8 +30,8 @@ from ._utils import deprecated
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
-from .PortManager import PortManager
 from .FolderManager import addFolderToPATH
+from .PortManager import PortManager
 
 
 def get_main_py_path(path: str) -> str:
