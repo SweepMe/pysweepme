@@ -22,10 +22,10 @@ jobs:
     steps:
       - name: Job Summary
         run: |
-          if [[ "${{ github.ref_name }}" != "main" && "${{ inputs.targetenv || 'testpypi' }}" == "pypi" ]]
+          if [[ "${{ github.ref_name }}" != "main" && "${{ github.ref_name }}" != "1.5.6" && "${{ inputs.targetenv || 'testpypi' }}" == "pypi" ]]
           then
           {
-              echo "::error::Publishing to PyPI is only allowed from the main branch";
+              echo "::error::Publishing to PyPI is only allowed from official branches";
               exit 1;
           }
           fi;
@@ -57,7 +57,7 @@ jobs:
         twine upload --repository-url ${{ vars.PYPI_API_ENDPOINT }} dist/*
     - name: Tag commit
       id: tag_commit
-      if: ${{ (github.ref_name == 'main') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
+      if: ${{ (github.ref_name == 'main') || (github.ref_name == '1.5.6') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
       run: |
         pip install --no-index --no-deps --find-links=dist/ pysweepme
         $PysweepmeVersion = python -c "import importlib.metadata; print(importlib.metadata.version('pysweepme'))"
@@ -72,7 +72,7 @@ jobs:
         "TagName=${TagName}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
       shell: pwsh
     - name: Create github release
-      if: ${{ (github.ref_name == 'main') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
+      if: ${{ (github.ref_name == 'main') || (github.ref_name == '1.5.6') || ((inputs.targetenv || 'testpypi') == 'pypi') }}
       uses: ncipollo/release-action@v1
       with:
         artifacts: "dist/*"
