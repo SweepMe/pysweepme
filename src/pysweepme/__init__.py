@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-__version__ = "1.5.6.16"
+__version__ = "1.5.6.17"
 
 import sys
 

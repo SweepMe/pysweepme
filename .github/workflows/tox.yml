@@ -2,7 +2,9 @@ name: Run Checks
 
 on: 
   pull_request:
-    branches: main
+    branches:
+      - main
+      - '1.5.6'
 
 permissions:
   contents: read
