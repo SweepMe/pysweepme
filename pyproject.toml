@@ -3,13 +3,13 @@ name = "pysweepme"
 description = "Load SweepMe! instrument drivers in your own python projects."
 readme = "README.md"
 requires-python = ">=3.9,<3.12"
-license = { file = "LICENSE.txt" }
+license = "MIT"
+license-files = ["LICENSE.md"]
 maintainers = [
     { name = "SweepMe! GmbH", email = "contact@sweep-me.net" },
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
