@@ -173,7 +173,7 @@ class EmptyDevice:
         """
         return self._is_run_stopped
 
-    @deprecated("1.5.7", "Use get_folder() instead.")
+    @deprecated("1.5.8", "Use get_folder() instead.")
     def get_Folder(self, identifier):
         """Easy access to a folder without the need to import the FolderManager."""
         return self.get_folder(identifier)
@@ -184,7 +184,7 @@ class EmptyDevice:
             return os.path.abspath(os.path.dirname(inspect.getfile(self.__class__)))
         return getFoMa().get_path(identifier)
 
-    @deprecated("1.5.7", "Use is_configfile() instead.")
+    @deprecated("1.5.8", "Use is_configfile() instead.")
     def isConfigFile(self):
         """deprecated: remains for compatibility reasons."""
         return self.is_configfile()
@@ -197,7 +197,7 @@ class EmptyDevice:
             return True
         return False
 
-    @deprecated("1.5.7", "Use get_configsections() instead.")
+    @deprecated("1.5.8", "Use get_configsections() instead.")
     def getConfigSections(self):
         """deprecated: remains for compatibility reasons."""
         return self.get_configsections()
@@ -214,7 +214,7 @@ class EmptyDevice:
             return _config.sections()
         return []
 
-    @deprecated("1.5.7", "Use get_configoptions() instead.")
+    @deprecated("1.5.8", "Use get_configoptions() instead.")
     def getConfigOptions(self, section):
         """deprecated: remains for compatibility reasons."""
         return self.get_configoptions(section)
@@ -236,7 +236,7 @@ class EmptyDevice:
                 vals[key] = _config[section][key]
         return vals
 
-    @deprecated("1.5.7", "Use get_config() instead.")
+    @deprecated("1.5.8", "Use get_config() instead.")
     def getConfig(self):
         """deprecated: remains for compatibility reasons."""
         return self.get_config()
