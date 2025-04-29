@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-__version__ = "1.5.7.1"
+__version__ = "1.5.7.2"
 
 import sys
 
@@ -36,13 +36,13 @@ from . import ErrorMessage
 if sys.platform == "win32":
     from . import WinFolder
 
-sys.modules['FolderManager'] = sys.modules['pysweepme.FolderManager']
-sys.modules['EmptyDeviceClass'] = sys.modules['pysweepme.EmptyDeviceClass']
-sys.modules['DeviceManager'] = sys.modules['pysweepme.DeviceManager']
-sys.modules['Ports'] = sys.modules['pysweepme.Ports']
-sys.modules['ErrorMessage'] = sys.modules['pysweepme.ErrorMessage']
+sys.modules["FolderManager"] = sys.modules["pysweepme.FolderManager"]
+sys.modules["EmptyDeviceClass"] = sys.modules["pysweepme.EmptyDeviceClass"]
+sys.modules["DeviceManager"] = sys.modules["pysweepme.DeviceManager"]
+sys.modules["Ports"] = sys.modules["pysweepme.Ports"]
+sys.modules["ErrorMessage"] = sys.modules["pysweepme.ErrorMessage"]
 if sys.platform == "win32":
-    sys.modules['WinFolder'] = sys.modules['pysweepme.WinFolder']
+    sys.modules["WinFolder"] = sys.modules["pysweepme.WinFolder"]
 
 from .FolderManager import addFolderToPATH, get_path, set_path
 from .EmptyDeviceClass import EmptyDevice
@@ -50,10 +50,23 @@ from .DeviceManager import get_device, get_driver
 from .Ports import get_port, close_port
 from .ErrorMessage import error, debug
 
-__all__ = ["FolderManager", "addFolderToPATH", "get_path", "set_path",
-           "EmptyDeviceClass", "EmptyDevice",
-           "DeviceManager", "get_device", "get_driver",
-           "Ports", "get_port", "close_port",
-           "PortManager", "Config",
-           "ErrorMessage","error", "debug",
-           "WinFolder"]
+__all__ = [
+    "FolderManager",
+    "addFolderToPATH",
+    "get_path",
+    "set_path",
+    "EmptyDeviceClass",
+    "EmptyDevice",
+    "DeviceManager",
+    "get_device",
+    "get_driver",
+    "Ports",
+    "get_port",
+    "close_port",
+    "PortManager",
+    "Config",
+    "ErrorMessage",
+    "error",
+    "debug",
+    "WinFolder",
+]
