@@ -937,7 +937,12 @@ class SOCKETport(Port):
 
         super().__init__(ID)
 
+        self.buffer: str = ""
+        """A buffer to store the incoming data."""
+
     def open_internal(self):
+        # Clear buffer
+        self.buffer = ""
 
         port_ID = self.port_properties["ID"]
         ok, HOST, PORT = is_IP(port_ID)
@@ -969,40 +974,69 @@ class SOCKETport(Port):
         self.write("*IDN?")
         return self.read()
 
-    def write_internal(self, cmd: str):
+    def clear_internal(self) -> None:
+        """Clear the buffer."""
+        # workaround: read until the buffer is empty
+        while True:
+            try:
+                self.read_chunk(4096)
+            except socket.timeout:
+                break
+        self.buffer = ""
 
+    def write_internal(self, cmd: str) -> None:
+        """Write the command to the port and wait for the delay time."""
         if time.time() - self.last_writetime < self.port_properties["delay"]:
-            time.sleep(self.port_properties["delay"] - (time.time() - self.last_writetime))
+            time.sleep(
+                self.port_properties["delay"] - (time.time() - self.last_writetime)
+            )
 
         encoding = self.port_properties["encoding"]
         self.port.sendall((cmd + self.write_termination).encode(encoding))
 
         self.last_writetime = time.time()
 
-    def read_internal(self, digits=0):
-
-        if digits == 0:
-            bytes_to_read = 1024
-        else:
-            bytes_to_read = 0
-
-        encoding = self.port_properties["encoding"]
+    def read_internal(self, digits: int = 0) -> str:
+        """Read until EOL character or for a given number of digits."""
         start_t = time.time()
-        received = False
+        eol = self.write_termination
 
-        while time.time() - start_t < float(self.port_properties["timeout"]):
-            try:
-                answer = self.port.recv(bytes_to_read)
-                received = True
-                break
-            except socket.timeout:
-                time.sleep(0.01)
+        while True:
+            if digits > 0:
+                if digits > len(self.buffer):
+                    # If the buffer is smaller than the requested number of digits, read more
+                    missing_bytes = digits - len(self.buffer)
+                    answer = self.buffer + self.read_chunk(missing_bytes)
+                    self.buffer = ""
+                else:
+                    # If the buffer is long enough, return the answer
+                    answer = self.buffer[:digits]
+                    self.buffer = self.buffer[digits:]
 
-        if not received:
-            raise TimeoutError("Socket could not be read")
+                return answer
 
-        decoded_answer = answer.decode(encoding)
-        return decoded_answer.rstrip(self.read_termination)
+            if eol is not None:
+                # If EOL is set, read until EOL
+                if eol in self.buffer:
+                    # If the EOL is in the buffer, return the answer
+                    idx = self.buffer.find(eol)
+                    answer = self.buffer[: idx + len(eol)]
+                    self.buffer = self.buffer[idx + len(eol) :]
+                    return answer.rstrip(eol)
+
+                # If the EOL is not in the buffer, read more
+                self.buffer += self.read_chunk()
+
+            if time.time() - start_t > float(self.port_properties["timeout"]):
+                msg = "Socket could not be read"
+                raise TimeoutError(msg)
+
+            time.sleep(0.01)
+
+    def read_chunk(self, digits: int = 1024) -> str:
+        """Read a chunk of data from the socket."""
+        encoding = self.port_properties["encoding"]
+        return self.port.recv(digits).decode(encoding)
 
 
 class COMport(Port):
