@@ -984,15 +984,18 @@ class SOCKETport(Port):
 
     def clear_internal(self) -> None:
         """Read out the buffer until its empty."""
-        # Set the timeout to 0 to read until the buffer is empty
-        self.port.settimeout(0)
-        while True:
-            try:
-                self.read_chunk(4096)
-            except socket.timeout:
-                break
+        # Set a 1ms timeout for maximum read out speed, but still >0 to avoid non-blocking (which might not read out all data)
+        timeout = self.port.gettimeout()
+        self.port.settimeout(0.001)
 
-        self.port.settimeout(0.1)
+        with contextlib.suppress(socket.timeout):
+            while True:
+                data = self.read_chunk(4096)
+                if not data:
+                    break
+
+        # Set the timeout back to the original value
+        self.port.settimeout(timeout)
         self.clear_buffer()
 
     def write_internal(self, cmd: str) -> None:
