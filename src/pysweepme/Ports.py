@@ -935,7 +935,7 @@ class SOCKETport(Port):
 
     port: socket.socket
 
-    def __init__(self, ID) -> None:
+    def __init__(self, ID: str) -> None:
         """Initialize the socket port."""
         super().__init__(ID)
 
@@ -984,18 +984,19 @@ class SOCKETport(Port):
 
     def clear_internal(self) -> None:
         """Read out the buffer until its empty."""
-        # Set a 1ms timeout for maximum read out speed, but still >0 to avoid non-blocking (which might not read out all data)
+        # Set a 1ms timeout for maximum read out speed
+        # Use >0 to avoid non-blocking mode (which might not read out all data)
         timeout = self.port.gettimeout()
-        self.port.settimeout(0.001)
-
-        with contextlib.suppress(socket.timeout):
-            while True:
-                data = self.read_chunk(4096)
-                if not data:
-                    break
-
-        # Set the timeout back to the original value
-        self.port.settimeout(timeout)
+        try:
+            self.port.settimeout(0.001)
+            with contextlib.suppress(socket.timeout):
+                while True:
+                    data = self.read_chunk(4096)
+                    if not data:
+                        break
+        finally:
+            # Set the timeout back to the original value
+            self.port.settimeout(timeout)
         self.clear_buffer()
 
     def write_internal(self, cmd: str) -> None:
@@ -1022,11 +1023,12 @@ class SOCKETport(Port):
 
         while True:
             # If both EOL and digits are given, return the minimum of both
-            digit_index = float("inf")
+            # Start with a digit_index larger than the available buffer size to trigger the readout if it is not updated
+            digit_index = len(self.buffer) + 1
             if 0 < digits <= len(self.buffer):
                 digit_index = digits
 
-            # Find the EOL position: if no EOL is given or not found, use float("inf")
+            # Start with an EOL index larger than the available buffer size to trigger the readout if it is not updated
             eol_index = float("inf")
             if eol and eol.encode(encoding) in self.buffer:
                 eol_bytes = eol.encode(encoding)
