@@ -524,8 +524,8 @@ class SOCKET(PortType):
             for conn in connections
             if conn.status == "LISTEN"
             and isinstance(conn.laddr, psutil._common.addr)  # noqa: SLF001
-            and conn.laddr.ip != "0.0.0.0"
-            and not conn.laddr.ip.startswith("::")  # (false positive)
+            and conn.laddr.ip != "0.0.0.0"  # noqa: S104 (false positive)
+            and not conn.laddr.ip.startswith("::")
         ]
         return connection_strings
 
