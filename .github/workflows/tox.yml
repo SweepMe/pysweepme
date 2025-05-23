@@ -26,4 +26,4 @@ jobs:
         pip install tox~=4.6.1
     - name: Run tox
       run: |
-        tox run-parallel
+        tox run-parallel --parallel-no-spinner
