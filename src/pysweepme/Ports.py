@@ -657,11 +657,11 @@ class Port:
         return ""
 
     def read_raw(self, digits: int = 0) -> str:
-        """Write a command via a port without encoding"""
+        """Read a command without decoding."""
         return self.read_raw_internal(digits)
 
     def read_raw_internal(self, digits: int) -> str:
-        """Function to be overwritten by each port to define how to read a command without encoding."""
+        """Function to be overwritten by each port to define how to read a command without decoding."""
         # if this function is not overwritten, it defines a fallback to read()
         return self.read(digits)
 
@@ -888,6 +888,11 @@ class USBTMCport(Port):
     def read_internal(self, digits=0):
         answer = self.port.read()
         return answer
+
+    def read_raw_internal(self, digits: int) -> bytes:
+        """Read raw data without decoding."""
+        digits = None if digits <= 0 else digits
+        return self.port.read_raw(digits)
 
 
 class TCPIPport(Port):
