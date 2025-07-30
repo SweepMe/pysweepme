@@ -656,14 +656,15 @@ class Port:
         """Function to be overwritten by each port to define how to read a command."""
         return ""
 
-    def read_raw(self, digits: int = 0) -> str:
+    def read_raw(self, digits: int = 0) -> bytes:
         """Read a command without decoding."""
         return self.read_raw_internal(digits)
 
-    def read_raw_internal(self, digits: int) -> str:
+    def read_raw_internal(self, digits: int) -> bytes:  # noqa: ARG002
         """Function to be overwritten by each port to define how to read a command without decoding."""
-        # if this function is not overwritten, it defines a fallback to read()
-        return self.read(digits)
+        msg = (f"Reading raw data from port type {self.port_properties['type']} is not implemented yet. "
+               f"Consider using port.port.read_raw() instead.")
+        raise NotImplementedError(msg)
 
     def query(self, cmd: str, digits: int = 0) -> str:
         """Write a command to the port and read the response."""
@@ -891,8 +892,8 @@ class USBTMCport(Port):
 
     def read_raw_internal(self, digits: int) -> bytes:
         """Read raw data without decoding."""
-        digits = None if digits <= 0 else digits
-        return self.port.read_raw(digits)
+        digits_or_none = None if digits <= 0 else digits
+        return self.port.read_raw(digits_or_none)
 
 
 class TCPIPport(Port):
