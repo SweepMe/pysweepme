@@ -646,7 +646,6 @@ class Port:
 
         # each port must decide on its own whether an empty string is a timeout error or not
         # if answer == "" and self.port_properties["Exception"] == True:
-        # self.close()
         # raise Exception('Port \'%s\' with ID \'%s\' does not respond. Check port properties, e.g. '
         #                 'timeout, EOL,..' % (self.port_properties["type"],self.port_properties["ID"]) )
 
@@ -1179,7 +1178,6 @@ class COMport(Port):
                     raise
 
         if answer == "" and not EOLfound and self.port_properties["Exception"] is True:
-            self.close()
             raise Exception(
                 "Port '%s' with ID '%s' does not respond.\n"
                 "Check port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM"
