@@ -279,13 +279,14 @@ class FolderManagerInstance(object):
             self.customMCfolder = self.publicpath + os.sep + 'CustomModules'
             self.DCDatafolder = self.publicpath + os.sep + 'DataDevices'
             self.MCDatafolder = self.publicpath + os.sep + 'DataModules'
+            self.screenshotfolder = self.publicpath + os.sep + 'Screenshots'
             self.interfacesfolder = self.mainpath + os.sep + 'libs' + os.sep + 'interfaces'
             self.widgetsfolder = self.mainpath + os.sep + 'Widgets'
             self.customresourcesfolder = self.publicpath + os.sep + 'Resources'
             self.customcolormapsfolder = self.customresourcesfolder  + os.sep + 'colormaps'
             self.customstylesfolder = self.customresourcesfolder  + os.sep + 'styles'
             self.customiconsfolder = self.customresourcesfolder  + os.sep + 'icons'
-           
+
             self.folders = {
                             "MAIN": self.mainpath,                  # Folder where SweepMe!.exe is
                             "TEMP": self.tempfolder,                # temporary measurement data in MAIN
@@ -318,6 +319,8 @@ class FolderManagerInstance(object):
                             
                             "DATAMODULES": self.MCDatafolder,       # Folder for Module specific data in PUBLIC
                             "DATADEVICES": self.DCDatafolder,       # Folder for Device specific data in PUBLIC
+
+                            "SCREENSHOTS": self.screenshotfolder,   # Folder for screenshots in PUBLIC
                             
                             "LOCAL": self.localpath,                # Local windows user appdata
                             "ROAMING": self.roamingpath,            # Roaming windows user appdata
