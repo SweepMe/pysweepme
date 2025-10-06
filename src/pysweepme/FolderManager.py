@@ -251,41 +251,41 @@ class FolderManagerInstance(object):
                 self.localpath = "."
                 self.programdatapath = "."
 
-            
-            self.libsfolder = self.mainpath + os.sep + "libs"
-            
-            self.resourcesfolder = self.mainpath + os.sep + 'resources'
 
-            self.configfolder = self.programdatapath_variable + os.sep + 'configuration'
-            self.serverfolder = self.configfolder + os.sep + 'server'
-            self.profilesfolder = self.roamingpath + os.sep + 'profiles'
-            self.SweepMeIcon = self.resourcesfolder + os.sep + 'icons' + os.sep + 'SweepMeS_icon.ico'
-            self.settingfolder = self.publicpath + os.sep + 'Settings'
-            self.roamingsetting = self.roamingpath + os.sep + 'Settings'
-            self.examplesfolder = self.mainpath + os.sep + 'examples'
-            self.measurementfolder = self.publicpath + os.sep + 'Measurement'
-            self.DCfolder = self.mainpath + os.sep + 'Devices'
-            self.shareddevicesfolder = self.programdatapath_variable + os.sep + 'Devices'
-            self.versionsfolder = self.programdatapath_variable + os.sep + 'Versions'
-            self.modulesfolder = self.mainpath + os.sep + 'Modules'
-            self.sharedmodulesfolder = self.programdatapath_variable + os.sep + 'Modules'
-            self.sweepscriptfolder = self.publicpath + os.sep + 'SweepScripts'
+            self.libsfolder = self.mainpath + os.sep + "libs"
+
+            self.resourcesfolder = self.mainpath + os.sep + "resources"
+
+            self.configfolder = self.programdatapath_variable + os.sep + "configuration"
+            self.serverfolder = self.configfolder + os.sep + "server"
+            self.profilesfolder = self.roamingpath + os.sep + "profiles"
+            self.SweepMeIcon = self.resourcesfolder + os.sep + "icons" + os.sep + "SweepMeS_icon.ico"
+            self.settingfolder = self.publicpath + os.sep + "Settings"
+            self.roamingsetting = self.roamingpath + os.sep + "Settings"
+            self.examplesfolder = self.mainpath + os.sep + "examples"
+            self.measurementfolder = self.publicpath + os.sep + "Measurement"
+            self.DCfolder = self.mainpath + os.sep + "Devices"
+            self.shareddevicesfolder = self.programdatapath_variable + os.sep + "Devices"
+            self.versionsfolder = self.programdatapath_variable + os.sep + "Versions"
+            self.modulesfolder = self.mainpath + os.sep + "Modules"
+            self.sharedmodulesfolder = self.programdatapath_variable + os.sep + "Modules"
+            self.sweepscriptfolder = self.publicpath + os.sep + "SweepScripts"
             self.pythonscriptsfolder = self.publicpath + os.sep + "Tools" + os.sep + "PythonScripts"
-            self.extlibsfolder = self.publicpath + os.sep + 'ExternalLibraries'
-            self.customfolder = self.publicpath + os.sep + 'CustomFiles'
-            self.calibrationfolder = self.publicpath + os.sep + 'CalibrationFiles'
-            self.customDCfolderold = self.publicpath + os.sep + 'CustomDeviceClasses'
-            self.customDCfolder = self.publicpath + os.sep + 'CustomDevices'
-            self.customMCfolder = self.publicpath + os.sep + 'CustomModules'
-            self.DCDatafolder = self.publicpath + os.sep + 'DataDevices'
-            self.MCDatafolder = self.publicpath + os.sep + 'DataModules'
-            self.screenshotfolder = self.publicpath + os.sep + 'Screenshots'
-            self.interfacesfolder = self.mainpath + os.sep + 'libs' + os.sep + 'interfaces'
-            self.widgetsfolder = self.mainpath + os.sep + 'Widgets'
-            self.customresourcesfolder = self.publicpath + os.sep + 'Resources'
-            self.customcolormapsfolder = self.customresourcesfolder  + os.sep + 'colormaps'
-            self.customstylesfolder = self.customresourcesfolder  + os.sep + 'styles'
-            self.customiconsfolder = self.customresourcesfolder  + os.sep + 'icons'
+            self.extlibsfolder = self.publicpath + os.sep + "ExternalLibraries"
+            self.customfolder = self.publicpath + os.sep + "CustomFiles"
+            self.calibrationfolder = self.publicpath + os.sep + "CalibrationFiles"
+            self.customDCfolderold = self.publicpath + os.sep + "CustomDeviceClasses"
+            self.customDCfolder = self.publicpath + os.sep + "CustomDevices"
+            self.customMCfolder = self.publicpath + os.sep + "CustomModules"
+            self.DCDatafolder = self.publicpath + os.sep + "DataDevices"
+            self.MCDatafolder = self.publicpath + os.sep + "DataModules"
+            self.screenshotfolder = self.publicpath + os.sep + "Screenshots"
+            self.interfacesfolder = self.mainpath + os.sep + "libs" + os.sep + "interfaces"
+            self.widgetsfolder = self.mainpath + os.sep + "Widgets"
+            self.customresourcesfolder = self.publicpath + os.sep + "Resources"
+            self.customcolormapsfolder = self.customresourcesfolder  + os.sep + "colormaps"
+            self.customstylesfolder = self.customresourcesfolder  + os.sep + "styles"
+            self.customiconsfolder = self.customresourcesfolder  + os.sep + "icons"
 
             self.folders = {
                             "MAIN": self.mainpath,                  # Folder where SweepMe!.exe is
@@ -297,31 +297,31 @@ class FolderManagerInstance(object):
                             "ROAMINGSETTINGS": self.roamingsetting, # Settings in ROAMING
                             "EXAMPLES": self.examplesfolder,        # Example settings in MAIN
                             "PROFILES": self.profilesfolder,        # Profile inis in ROAMING
-                            
+
                             "PROGRAMDATA": self.programdatapath,    # ProgramData path for things that need be accessed by all user but should not be seen easily
-                            
+
                             "DEVICES": self.DCfolder,               # Devices in MAIN
                             "MODULES": self.modulesfolder,          # Modules in MAIN
-                            
+
                             "WIDGETS": self.widgetsfolder,          # WIDGETS in MAIN
                             "INTERFACES": self.interfacesfolder,    # INTERFACES in MAIN\libs
-                            
+
                             "SHAREDDEVICES": self.shareddevicesfolder,  # Devices in ProgramData
                             "SHAREDMODULES": self.sharedmodulesfolder,  # Modules in ProgramData
                             "VERSIONS": self.versionsfolder,            # Versions in ProgramData
-                            
+
                             "CONFIG": self.configfolder,             # Config folder in ProgramData
                             "SERVER": self.serverfolder,             # Server folder in ProgramData / Config folder
-                                                    
+
                             "CUSTOMDEVICESOLD": self.customDCfolderold,# DeviceClasses in PUBLIC
                             "CUSTOMDEVICES": self.customDCfolder,   # Devices in PUBLIC
                             "CUSTOMMODULES": self.customMCfolder,   # Modules in PUBLIC
-                            
+
                             "DATAMODULES": self.MCDatafolder,       # Folder for Module specific data in PUBLIC
                             "DATADEVICES": self.DCDatafolder,       # Folder for Device specific data in PUBLIC
 
                             "SCREENSHOTS": self.screenshotfolder,   # Folder for screenshots in PUBLIC
-                            
+
                             "LOCAL": self.localpath,                # Local windows user appdata
                             "ROAMING": self.roamingpath,            # Roaming windows user appdata
                             "PUBLIC": self.publicpath,              # Public documents folder for SweepMe!
@@ -334,13 +334,13 @@ class FolderManagerInstance(object):
                             "CUSTOMCOLORMAPS": self.customcolormapsfolder, # Custom colormaps in PUBLIC
                             "CUSTOMSTYLES": self.customstylesfolder, # Custom styles in PUBLIC
                             "CUSTOMICONS": self.customiconsfolder, # Custom icons in PUBLIC
-                            
-                            
-                            
+
+
+
                             # "SYSTEMUSER": self.systemuserpath,      # SweepMe! folder in system user folder
                             "EXTLIBS": self.extlibsfolder,          # External libraries such as dll in PUBLIC
                             }
-              
+
             self.profileuserfile = None # because we do not know which profile will be selected
             self.systemuserfile = self.roamingpath + os.sep + 'OSuser.ini'
             self.userfile = self.mainpath + os.sep + 'user.txt'
