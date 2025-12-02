@@ -262,6 +262,41 @@ class EmptyDevice:
             return self.update_gui_parameters({})
         return {}
 
+    def get_gui_parameters_and_default_values(self) -> dict[str, Any]:
+        """Get the default parameters and values of the driver.
+
+        The default values explicitly mean a single value that shall be applied by default,
+        e.g. in case of lists the first element. This value can thus directly be used as the
+        default to show in the GUI, or as a fallback value for the driver when the value from
+        the GUI was None.
+
+        Returns:
+            A mapping of parameter names to their default value.
+        """
+        if self.uses_update_gui_parameters:
+            driver_parameters = self.update_gui_parameters({})
+        else:
+            driver_parameters = self.set_GUIparameter()
+        return {k: v[0] if isinstance(v, list) and len(v) > 0 else v
+                for k, v in driver_parameters.items()}
+
+    def enhance_parameters_with_defaults(self, parameters: dict[str, Any] | None) -> dict[str, Any]:
+        """Enhance the parameters dictionary with values from the driver's default parameter values.
+
+        Any parameters in the default driver parameters that are not included in the passed dictionary or which are
+        None, are set to the value given by the drivers default parameters.
+
+        Args:
+            parameters: The dictionary mapping parameters to their values from the GUI, or None.
+
+        Returns:
+            A mapping of parameters to their values from the GUI with default values as fallback.
+        """
+        default_parameters = self.get_gui_parameters_and_default_values()
+        if parameters is None:
+            return default_parameters
+        return default_parameters | {k: v for k, v in parameters.items() if v is not None}
+
     def update_gui_parameters_with_fallback(
             self, reading_mode: bool, parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -294,25 +329,25 @@ class EmptyDevice:
             A dictionary where the keys are the fields that shall be shown in the GUI and the values are
             the default value. Simple drivers will always return the same defaults.
         """
-        if not self.uses_update_gui_parameters:
-            if reading_mode:
-                return self.set_GUIparameter()  # set_GUIparameter will actually get the parameters from the driver
-            self.get_GUIparameter(parameters or {})  # get_GUIparameter will actually apply the parameters
-            return {}
-
         # Note to developers:
         # The "enhance with defaults" is necessary, because when switching the driver in SweepMe!,
         # SweepMe! will pass the GUI parameters of the previous driver to the new driver, which
         # obviously doesn't match. Once this behaviour is fixed, this function won't be needed any longer.
         # This behaviour does not impact the correctness of the operation, as a second call to update the
         # GUI parameters will pass the correct parameters to the driver anyway.
-        if parameters is not None:
-            default_parameters = {k: v[0] if isinstance(v, list) and len(v) > 0 else v
-                                  for k, v in self.update_gui_parameters({}).items()}
-            parameters = default_parameters | { k: v for k, v in parameters.items() if v is not None}
-        if parameters:
-            self.apply_gui_parameters(parameters)
-        return self.update_gui_parameters(parameters or {})
+        if not self.uses_update_gui_parameters:
+            if reading_mode:
+                return self.set_GUIparameter()  # set_GUIparameter will actually get the parameters from the driver
+            enhanced_parameters = self.enhance_parameters_with_defaults(parameters)
+            self.get_GUIparameter(enhanced_parameters)  # get_GUIparameter will actually apply the parameters
+            return {}
+
+        if parameters is None:
+            return self.update_gui_parameters({})
+        enhanced_parameters = self.enhance_parameters_with_defaults(parameters)
+        if enhanced_parameters:
+            self.apply_gui_parameters(enhanced_parameters)
+        return self.update_gui_parameters(enhanced_parameters)
 
     def apply_gui_parameters(self, parameters: dict[str, Any]) -> None:
         """Apply the given parameters to the driver instance.
