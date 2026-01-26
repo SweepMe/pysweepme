@@ -1,10 +1,9 @@
 name: Check Semilinear History
 
-on: 
+on:
   pull_request:
     branches:
       - main
-      - '1.5.6'
 
 permissions:
   contents: read
@@ -14,8 +13,8 @@ jobs:
     name: Check Semilinear History
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Check Semilinear History
-      shell: pwsh
-      run: |
-        .\.github\Check-SemilinearHistory.ps1 -targetBranch ${{ github.base_ref }} -sourceBranch ${{ github.head_ref }}
+      - uses: actions/checkout@v3
+      - name: Check Semilinear History
+        shell: pwsh
+        run: |
+          .\.github\Check-SemilinearHistory.ps1 -targetBranch ${{ github.base_ref }} -sourceBranch ${{ github.head_ref }}
