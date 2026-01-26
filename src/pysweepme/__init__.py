@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-__version__ = "1.5.7.6"
+__version__ = "1.5.8.1"
 
 import sys
 
@@ -46,7 +46,7 @@ if sys.platform == "win32":
 
 from .FolderManager import addFolderToPATH, get_path, set_path
 from .EmptyDeviceClass import EmptyDevice
-from .DeviceManager import get_device, get_driver
+from .DeviceManager import get_driver
 from .Ports import get_port, close_port
 from .ErrorMessage import error, debug
 
@@ -58,7 +58,6 @@ __all__ = [
     "EmptyDeviceClass",
     "EmptyDevice",
     "DeviceManager",
-    "get_device",
     "get_driver",
     "Ports",
     "get_port",

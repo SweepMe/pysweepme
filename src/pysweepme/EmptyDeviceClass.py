@@ -31,7 +31,6 @@ from configparser import ConfigParser
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pysweepme._utils import deprecated
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
 from .FolderManager import getFoMa
@@ -173,21 +172,11 @@ class EmptyDevice:
         """
         return self._is_run_stopped
 
-    @deprecated("1.5.8", "Use get_folder() instead.")
-    def get_Folder(self, identifier):
-        """Easy access to a folder without the need to import the FolderManager."""
-        return self.get_folder(identifier)
-
     def get_folder(self, identifier):
         """Easy access to a folder without the need to import the FolderManager."""
         if identifier == "SELF":
             return os.path.abspath(os.path.dirname(inspect.getfile(self.__class__)))
         return getFoMa().get_path(identifier)
-
-    @deprecated("1.5.8", "Use is_configfile() instead.")
-    def isConfigFile(self):
-        """deprecated: remains for compatibility reasons."""
-        return self.is_configfile()
 
     def is_configfile(self):
         """This function checks whether a driver related config file exists."""
@@ -196,11 +185,6 @@ class EmptyDevice:
             _config.read(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini")
             return True
         return False
-
-    @deprecated("1.5.8", "Use get_configsections() instead.")
-    def getConfigSections(self):
-        """deprecated: remains for compatibility reasons."""
-        return self.get_configsections()
 
     def get_configsections(self):
         """This function returns all sections of the driver related config file.
@@ -213,11 +197,6 @@ class EmptyDevice:
         if self.is_configfile():
             return _config.sections()
         return []
-
-    @deprecated("1.5.8", "Use get_configoptions() instead.")
-    def getConfigOptions(self, section):
-        """deprecated: remains for compatibility reasons."""
-        return self.get_configoptions(section)
 
     def get_configoptions(self, section):
         """This functions returns all key-value options of a given section of the driver related config file.
@@ -235,11 +214,6 @@ class EmptyDevice:
             for key in _config[section]:
                 vals[key] = _config[section][key]
         return vals
-
-    @deprecated("1.5.8", "Use get_config() instead.")
-    def getConfig(self):
-        """deprecated: remains for compatibility reasons."""
-        return self.get_config()
 
     def get_config(self):
         """This function returns a representation of the driver related config file by means of a nested dictionary

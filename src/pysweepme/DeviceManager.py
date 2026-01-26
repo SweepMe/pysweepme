@@ -26,7 +26,6 @@ import os
 import types
 from pathlib import Path
 
-from ._utils import deprecated
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
@@ -161,6 +160,3 @@ def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
     setup_driver(driver, name, port_string)
 
     return driver
-
-
-get_device = deprecated("1.5.8", "Use get_driver() instead.", name="get_device")(get_driver)
