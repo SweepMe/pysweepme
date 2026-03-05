@@ -459,13 +459,20 @@ class EmptyDevice:
     def deinitialize(self):
         """Function to be overridden if needed."""
 
-    def reconfigure(self, parameters={}, keys=[]):
+    def reconfigure(self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None) -> None:
         """Function to be overridden if needed.
 
-        if a GUI parameter changes after replacement with global parameters, the device needs to be reconfigure.
+        If a GUI parameter changes after replacement with global parameters, the device needs to be reconfigured.
         Default behavior is that all parameters are set again and 'configure' is called.
         The device class maintainer can redefine/overwrite 'reconfigure' with a more individual procedure.
+
+        Args:
+            parameters: Dictionary of all current GUI parameters.
+            keys: List of parameter keys that changed. Ignored in the base implementation, but available
+                  for subclasses that want to reconfigure only the affected parameters.
         """
+        if parameters is None:
+            parameters = {}
         if self.uses_update_gui_parameters:
             if parameters:
                 self.apply_gui_parameters(parameters)
@@ -507,7 +514,7 @@ class EmptyDevice:
     def reach(self) -> None:
         """Actively wait until the applied value is reached.
 
-        Optional, can be overriden by the device class if needed.
+        Optional, can be overridden by the device class if needed.
         """
 
     def adapt(self):
