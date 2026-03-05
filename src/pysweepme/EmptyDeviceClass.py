@@ -68,6 +68,7 @@ class EmptyDevice:
         self.port_types: list[str] = []
         self.port_identifications: list[str] = [""]
         self.port_properties: dict[str, Any] = {}
+        self.port: Port | Any | None = None
 
         self.DeviceClassName = str(self.__class__)[8:-2].split(".")[0]
 
