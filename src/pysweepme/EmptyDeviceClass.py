@@ -32,6 +32,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
+from pysweepme.Ports import Port
 
 from .FolderManager import getFoMa
 
@@ -55,10 +56,10 @@ class EmptyDevice:
         self.shortname = ""
         self.idlevalue = None  # deprecated, remains for compatibility reasons
         self.stopvalue = None  # deprecated, remains for compatibility reasons
-        self.value = None
+        self.value: Any = None
 
         self.abort = ""  # deprecated, remains for compatibility reasons
-        self.stopMeasurement = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
+        self.stopMeasurement: str = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
 
         # variable that can be overwritten by SweepMe! to indicate that the user requested a stop
         self._is_run_stopped = False
@@ -122,10 +123,10 @@ class EmptyDevice:
         """Clear all information that have been stored in the device_communication dictionary."""
         EmptyDevice._device_communication = {}
 
-    def list_functions(self):
+    def list_functions(self) -> list[str]:
         """Returns a list of all function names that are individually defined by the driver, e.g. get/set functions.
 
-        These functions can be be used in python projects when using pysweepme to directly access instrument properties.
+        These functions can be used in python projects when using pysweepme to directly access instrument properties.
         """
         all_functions = [func for func in dir(self) if callable(getattr(self, func)) and not func.startswith("_")]
         empty_device_functions = [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
@@ -158,27 +159,27 @@ class EmptyDevice:
             return self._parameter_store[key]
         return None
 
-    def _on_run(self):
+    def _on_run(self) -> None:
         """Called by SweepMe! at the beginning of the run to indicate the start. Do not overwrite it."""
         self._is_run_stopped = False
 
-    def _on_stop(self):
+    def _on_stop(self) -> None:
         """Called by SweepMe! in case the user requests a stop of the run. Do not overwrite it."""
         self._is_run_stopped = True
 
-    def is_run_stopped(self):
+    def is_run_stopped(self) -> bool:
         """This function can be used in a driver to figure out whether a stop of the run was requested by the user
         It is helpful if a driver function is caught in a while-loop.
         """
         return self._is_run_stopped
 
-    def get_folder(self, identifier):
+    def get_folder(self, identifier: str) -> str | bool:
         """Easy access to a folder without the need to import the FolderManager."""
         if identifier == "SELF":
             return os.path.abspath(os.path.dirname(inspect.getfile(self.__class__)))
         return getFoMa().get_path(identifier)
 
-    def is_configfile(self):
+    def is_configfile(self) -> bool:
         """This function checks whether a driver related config file exists."""
         # if config file directory is changed it must also be changed in version manager!
         if os.path.isfile(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini"):
@@ -186,7 +187,7 @@ class EmptyDevice:
             return True
         return False
 
-    def get_configsections(self):
+    def get_configsections(self) -> list[str]:
         """This function returns all sections of the driver related config file.
 
         If not file exists, an empty list is returned.
@@ -198,7 +199,7 @@ class EmptyDevice:
             return _config.sections()
         return []
 
-    def get_configoptions(self, section):
+    def get_configoptions(self, section: str) -> dict[str, Any]:
         """This functions returns all key-value options of a given section of the driver related config file.
 
         If the file does not exist, an empty dictionary is returned.
@@ -215,13 +216,13 @@ class EmptyDevice:
                 vals[key] = _config[section][key]
         return vals
 
-    def get_config(self):
+    def get_config(self) -> dict[str, dict[str, Any]]:
         """This function returns a representation of the driver related config file by means of a nested dictionary
         that contains for each section a dictionary with the options.
         """
         return {section: self.get_configoptions(section) for section in self.get_configsections()}
 
-    def get_GUIparameter(self, parameter: dict[str, Any]):
+    def get_GUIparameter(self, parameter: dict[str, Any]) -> None:
         """Is overwritten by Device Class to retrieve the GUI parameter selected by the user."""
         # Used for compatibility with old code that still uses get_GUIparameter
         if self.uses_update_gui_parameters:
@@ -434,10 +435,12 @@ class EmptyDevice:
 
         return self._latest_parameters
 
-    def set_port(self, port):
+    def set_port(self, port: Any) -> None:
+        """Set the port of the device."""
         self.port = port
 
-    def get_port(self):
+    def get_port(self) -> Any:
+        """Get the port of the device."""
         return self.port
 
     ## can be used by device class to be triggered by button find_Ports
@@ -447,16 +450,16 @@ class EmptyDevice:
     ## the module checks whether the functions exists
     # def get_CalibrationFile_properties(self, port = ""):
 
-    def connect(self):
+    def connect(self) -> None:
         """Function to be overridden if needed and not using the port manager."""
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Function to be overridden if needed."""
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Function to be overridden if needed."""
 
-    def deinitialize(self):
+    def deinitialize(self) -> None:
         """Function to be overridden if needed."""
 
     def reconfigure(self, parameters: dict[str, Any] | None = None, keys: list[str] | None = None) -> None:
@@ -481,34 +484,34 @@ class EmptyDevice:
             self.get_GUIparameter(parameters)
         self.configure()
 
-    def configure(self):
+    def configure(self) -> None:
         """Function to be overridden if needed."""
 
-    def unconfigure(self):
+    def unconfigure(self) -> None:
         """Function to be overridden if needed."""
-        ## TODO: should be removed in future as these lines are anyway not performed if the function is overridden
+        # TODO: should be removed in future as these lines are anyway not performed if the function is overridden
         if self.idlevalue is not None:
             self.value = self.idlevalue
 
-    def poweron(self):
+    def poweron(self) -> None:
         """Function to be overridden if needed."""
 
-    def poweroff(self):
+    def poweroff(self) -> None:
         """Function to be overridden if needed."""
 
-    def signin(self):
+    def signin(self) -> None:
         """Function to be overridden if needed."""
 
-    def signout(self):
+    def signout(self) -> None:
         """Function to be overridden if needed."""
 
-    def _transfer(self):
+    def _transfer(self) -> None:
         """Function to be overridden if needed."""
 
-    def start(self):
+    def start(self) -> None:
         """Function to be overridden if needed."""
 
-    def apply(self):
+    def apply(self) -> None:
         """Function to be overridden if needed."""
 
     def reach(self) -> None:
@@ -517,32 +520,32 @@ class EmptyDevice:
         Optional, can be overridden by the device class if needed.
         """
 
-    def adapt(self):
+    def adapt(self) -> None:
         """Function to be overridden if needed."""
 
-    def adapt_ready(self):
+    def adapt_ready(self) -> None:
         """Function to be overridden if needed."""
 
-    def trigger_ready(self):
+    def trigger_ready(self) -> None:
         """Function to be overridden if needed."""
 
-    def measure(self):
+    def measure(self) -> None:
         """Function to be overridden if needed."""
 
-    def request_result(self):
+    def request_result(self) -> None:
         """Function to be overridden if needed."""
 
-    def read_result(self):
+    def read_result(self) -> None:
         """Function to be overridden if needed."""
 
-    def process_data(self):
+    def process_data(self) -> None:
         """Function to be overridden if needed."""
 
-    def call(self):
+    def call(self) -> Any:
         """Function to be overridden if needed."""
-        return [float("nan") for x in self.variables]
+        return [float("nan") for _ in self.variables]
 
-    def finish(self):
+    def finish(self) -> None:
         """Function to be overridden if needed."""
 
     # def set_Parameter(self,feature,value): # not used yet
@@ -551,63 +554,64 @@ class EmptyDevice:
     # def get_Parameter(self,feature): # not used yet
     # pass
 
-    def stop_Measurement(self, text):
+    def stop_Measurement(self, text: str) -> bool:
         """deprecated: use 'raise Exception(...)' instead
         sets flag to stop a measurement, not supported in pysweepme standalone.
         """
         self.stopMeasurement = text
         return False
 
-    def stop_measurement(self, text):
+    def stop_measurement(self, text: str) -> bool:
         """deprecated: use 'raise Exception(...)' instead
         sets flag to stop a measurement, not supported in pysweepme standalone.
         """
         self.stopMeasurement = text
         return False
 
-    def write_Log(self, msg):
+    def write_Log(self, msg: str) -> None:
         """deprecated, remains for compatibility reasons."""
         self.message_log(msg)
 
-    def write_log(self, msg):
+    def write_log(self, msg: str) -> None:
         """deprecated, remains for compatibility reasons."""
         self.message_log(msg)
 
-    def message_log(self, msg):
+    def message_log(self, msg: str) -> None:
         """Writes message to logbook file."""
         message_log(msg)
 
-    def message_Info(self, msg):
+    def message_Info(self, msg: str) -> None:
         """Command is deprecated, use 'message_info' instead."""
         self.message_info(msg)
 
-    def message_info(self, msg):
+    def message_info(self, msg: str) -> None:
         """Write to info box."""
         message_info(msg)
 
-    def message_Box(self, msg):
+    def message_Box(self, msg: str) -> None:
         """Command is deprecated, use 'message_box' instead."""
         self.message_box(msg)
 
-    def message_box(self, msg, blocking=False):
+    def message_box(self, msg: str, blocking=False) -> None:
         """Creates a message box with given message."""
         message_box(msg, blocking)
 
-    def message_balloon(self, msg):
+    def message_balloon(self, msg: str) -> None:
         """Creates a message balloon with given message."""
         message_balloon(msg)
 
     """  convenience functions  """
 
-    def get_variables(self):
+    def get_variables(self) -> list[str]:
         """Returns a list of strings being the variable of the Device Class."""
         return self.variables
 
-    def get_units(self):
+    def get_units(self) -> list[str]:
         """Returns a list of strings being the units of the Device Class."""
         return self.units
 
-    def get_variables_units(self):
+    def get_variables_units(self) -> dict[str, str]:
+        """Returns a dictionary with variable names as keys and their corresponding units as values."""
         variable_units = {}
 
         for var, unit in zip(self.variables, self.units):
@@ -615,15 +619,16 @@ class EmptyDevice:
 
         return variable_units
 
-    def set_value(self, value):
+    def set_value(self, value: Any) -> None:
+        """Set self.value, which is the value that is applied to the device when calling 'apply'."""
         self.value = value
 
-    def apply_value(self, value):
+    def apply_value(self, value: Any) -> None:
         """Convenience function for user to apply a value, mainly for use with pysweepme."""
         self.value = value
         self.apply()
 
-    def write(self, value):
+    def write(self, value: Any) -> None:
         """Applies and reaches the given value as new sweep value for the selected SweepMode."""
         self.start()
         self.apply_value(value)
@@ -631,7 +636,7 @@ class EmptyDevice:
         if hasattr(self, "reach"):
             self.reach()
 
-    def read(self):
+    def read(self) -> Any:
         """\
         returns a list of values according to functions 'get_variables' and 'get_units'
         convenience function for pysweepme to quickly retrieve values by calling several semantic standard functions.
