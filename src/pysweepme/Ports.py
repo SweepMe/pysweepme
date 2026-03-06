@@ -110,7 +110,7 @@ def close_resourcemanager():
         error()
 
 
-def get_resourcemanager():
+def get_resourcemanager() -> pyvisa.ResourceManager | bool:
     """Returns and open resource manager object"""
     # first, we have to figure out whether rm is open or closed
     # of open session is a handle, otherwise an error is raised
@@ -487,12 +487,14 @@ class TCPIP(PortType):
 
     properties.update(
         {
+            "TCPIP_fixed_IP": None,
             "TCPIP_EOLwrite": None,
             "TCPIP_EOLread": None,
         },
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the TCPIP port type."""
         super().__init__()
 
     def find_resources_internal(self):
@@ -533,10 +535,10 @@ class SOCKET(PortType):
 class Port:
     """base class for any port"""
 
-    def __init__(self, ID):
-        self.port = None
-        self.port_ID = ID
-        self.port_properties = {
+    def __init__(self, ID: str):
+        self.port: Any = None
+        self.port_ID: str = ID
+        self.port_properties: dict[str, Any] = {
             # The Port Type, e.g. "COM", "GPIB"
             "type": type(self).__name__[
                 :-4
@@ -556,7 +558,7 @@ class Port:
             # String identifying the port to open 'COM3', 'GPIB0::1::INSTR', ...
             "ID": self.port_ID,
         }
-
+        self.port_type: type[PortType] | None = None
         self.initialize_port_properties()
 
         self.actualwritetime = time.perf_counter()
@@ -564,7 +566,8 @@ class Port:
     def __del__(self):
         pass
 
-    def initialize_port_properties(self):
+    def initialize_port_properties(self) -> None:
+        """Initialize the port properties with the default properties of the PortType."""
         # we need to know the PortType Object
         self.port_type = type(port_types[self.port_properties["type"]])
 
@@ -574,10 +577,13 @@ class Port:
         # in case any port like to do something special, it has the chance now
         self.initialize_port_properties_internal()
 
-    def initialize_port_properties_internal(self):
-        pass
+    def initialize_port_properties_internal(self) -> None:
+        """Function to be overwritten by each port to define special default properties."""
 
-    def update_properties(self, properties={}):
+    def update_properties(self, properties: dict[str, Any] | None = None) -> None:
+        """Update the port properties with the given properties."""
+        if properties is None:
+            properties = {}
         self.port_properties.update(properties)
 
     def set_logging(self, state):
@@ -612,10 +618,14 @@ class Port:
     def clear_internal(self) -> None:
         """Function to be overwritten by each port to device what is done during clear."""
 
+    def debug(self, msg: str) -> None:
+        """Print debug information for the port."""
+        debug(f"{self.port_properties['ID']} {msg}")
+
     def write(self, cmd: str) -> None:
         """Write a command via a port."""
         if self.port_properties["debug"]:
-            debug(" ".join([self.port_properties["ID"], "write:", repr(cmd)]))
+            self.debug(f"write: {repr(cmd)}")
 
         if cmd != "":
             self.write_internal(cmd)
@@ -898,14 +908,21 @@ class USBTMCport(Port):
 class TCPIPport(Port):
     port: pyvisa.resources.TCPIPInstrument
 
-    def __init__(self, ID):
+    def __init__(self, ID: str) -> None:
+        """Initialize the TCPIP port."""
         super().__init__(ID)
 
-    def open_internal(self):
+    def open_internal(self) -> None:
+        """Use the resource manager to open the TCPIP port and set the timeout and EOL characters."""
         if get_resourcemanager() is False:
             return
 
-        self.port = rm.open_resource(self.port_properties["ID"])
+        tcpip_address = self.get_ip_address()
+        if not tcpip_address:
+            error("TCPIP port cannot be opened without an ID or fixed IP address.")
+            return
+
+        self.port = rm.open_resource(tcpip_address)
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
         if self.port_properties["TCPIP_EOLwrite"] is not None:
@@ -914,24 +931,39 @@ class TCPIPport(Port):
         if self.port_properties["TCPIP_EOLread"] is not None:
             self.port.read_termination = self.port_properties["TCPIP_EOLread"]
 
-    def close_internal(self):
+    def get_ip_address(self) -> str:
+        """If "TCPIP_fixed_IP" is given in the port properties, the port string is not needed"""
+        if self.port_properties["ID"]:
+            return str(self.port_properties["ID"])
+        elif self.port_properties["TCPIP_fixed_IP"] is not None:
+            return str(self.port_properties["TCPIP_fixed_IP"])
+
+        return ""
+
+    def close_internal(self) -> None:
+        """Close the TCPIP port."""
         self.port.close()
 
     def clear_internal(self) -> None:
         """Clear the port."""
         self.port.clear()
 
-    def get_identification(self):
+    def get_identification(self) -> str:
+        """Returns the *IDN of the TCPIP port."""
         self.write("*IDN?")
         return self.read()
 
-    def write_internal(self, cmd):
+    def write_internal(self, cmd: str) -> None:
+        """Write the command to the port and wait for the delay time."""
         self.port.write(cmd)
         time.sleep(self.port_properties["delay"])
 
+    def debug(self, msg: str) -> None:
+        """Print debug information for the port."""
+        debug(f"{self.get_ip_address()} {msg}")
+
     def read_internal(self, digits=0):
         answer = self.port.read()
-
         return answer
 
 
