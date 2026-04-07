@@ -50,22 +50,27 @@ def get_debug_info():
     return pyvisa.util.get_debug_info(to_screen=False)
 
 
-def get_porttypes():
+def get_porttypes() -> list[str]:
     """Returns a list of all supported port types"""
     return list(port_types.keys())
 
 
-def get_resources(keys):
-    """Returns all resource strings for the given list of port type string"""
-    resources = []
+def get_resources(keys: list[str] | None) -> list[str]:
+    """Returns all resource strings for the given list of port type string.
 
+    Args:
+        keys: List of port type strings, e.g. ["GPIB", "COM"]. If None, all port types are used.
+    """
+    resources = []
+    if keys is None:
+        keys = get_porttypes()
     for key in keys:
         resources += port_types[key].find_resources()
 
     return resources
 
 
-def open_resourcemanager(visafile_path=""):
+def open_resourcemanager(visafile_path: str = "") -> pyvisa.ResourceManager | None:
     """Returns an open resource manager instance"""
     rm = None
 
@@ -100,10 +105,9 @@ def open_resourcemanager(visafile_path=""):
     return rm
 
 
-def close_resourcemanager():
+def close_resourcemanager() -> None:
     """Closes the current resource manager instance"""
     try:
-        # print("close resource manager", rm.session)
         if rm is not None:
             rm.close()
     except:
@@ -131,13 +135,10 @@ def get_resourcemanager() -> pyvisa.ResourceManager | bool:
     except:
         return False
 
-    # print("get resource manager", rm.session)
-    # print("get visalib", rm.visalib)
-
     return rm
 
 
-def is_resourcemanager():
+def is_resourcemanager() -> bool:
     """Check whether there is a resource manager instance"""
     if "rm" in globals():
         return True
@@ -145,7 +146,17 @@ def is_resourcemanager():
         return False
 
 
-def is_IP(port_str) -> tuple[bool, str, int]:
+def is_IP(port_str: str) -> tuple[bool, str, int]:
+    """Check whether the given string is an IP address with port.
+
+    Args:
+        port_str: The string to check.
+
+    Returns:
+        is_ip: True if the string is an IP address with port, False otherwise.
+        ip: The IP address if the string is an IP address with port, empty string otherwise.
+        port: The port if the string is an IP address with port, -1 otherwise.
+    """
     error_response = (False, "", -1)
     port_str = port_str.strip()
     result = re.search(r"(\d{1,3}).(\d{1,3}).(\d{1,3}).(\d{1,3}):(\d{1,5})", port_str)
@@ -168,7 +179,7 @@ def is_IP(port_str) -> tuple[bool, str, int]:
     return True, ip, host
 
 
-def get_port(ID, properties={}):
+def get_port(ID: str, properties: dict[str, Any] | None = None) -> Union[Port, bool]:
     """Returns an open port object for the given ID and port properties"""
     port: Port
 
@@ -232,7 +243,8 @@ def get_port(ID, properties={}):
 
     # here default properties are overwritten by specifications given in the DeviceClass
     # only overwrite by the DeviceClass which opens the port to allow to alter the properties further in open()
-    port.port_properties.update(properties)
+    if properties is not None:
+        port.port_properties.update(properties)
 
     # port is checked if being open and if not, port is opened
     if port.port_properties["open"] is False:
@@ -245,10 +257,9 @@ def get_port(ID, properties={}):
     return port
 
 
-def close_port(port):
-    """Close the given port object"""
-    # port is checked if being open and if so port is closed
-    if port.port_properties["open"] is True:
+def close_port(port: Port) -> None:
+    """Close the given port object if it is open."""
+    if port.port_properties["open"]:
         port.close()
 
 
@@ -1521,7 +1532,7 @@ prologix_controller: dict[str, PrologixGPIBcontroller] = {}
 
 rm = open_resourcemanager()
 
-port_types = {
+port_types: dict[str, PortType] = {
     "COM": COM(),
     # "MODBUS": MODBUS(),
     "GPIB": GPIB(),
