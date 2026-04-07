@@ -119,6 +119,11 @@ class EmptyDevice:
         )
         raise TypeError(msg)
 
+    @classmethod
+    def get_device_communication(cls) -> dict[str, Any]:
+        """Single (global) dictionary where drivers can store their information that can be shared across instances."""
+        return cls._device_communication
+
     @staticmethod
     def clear_device_communication() -> None:
         """Clear all information that have been stored in the device_communication dictionary."""
