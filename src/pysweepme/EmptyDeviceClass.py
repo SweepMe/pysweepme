@@ -29,6 +29,7 @@ import inspect
 import os
 from configparser import ConfigParser
 from copy import deepcopy
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
@@ -188,9 +189,15 @@ class EmptyDevice:
     def is_configfile(self) -> bool:
         """This function checks whether a driver related config file exists."""
         # if config file directory is changed it must also be changed in version manager!
-        if os.path.isfile(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini"):
-            _config.read(getFoMa().get_path("CUSTOMFILES") + os.sep + self.DeviceClassName + ".ini")
+        custom_files_path = getFoMa().get_path("CUSTOMFILES")
+        if not isinstance(custom_files_path, str):
+            return False
+
+        config_file_path = Path(custom_files_path) / f"{self.DeviceClassName}.ini"
+        if config_file_path.is_file():
+            _config.read(config_file_path)
             return True
+
         return False
 
     def get_configsections(self) -> list[str]:
@@ -598,7 +605,7 @@ class EmptyDevice:
         """Command is deprecated, use 'message_box' instead."""
         self.message_box(msg)
 
-    def message_box(self, msg: str, blocking=False) -> None:
+    def message_box(self, msg: str, blocking: bool = False) -> None:
         """Creates a message box with given message."""
         message_box(msg, blocking)
 
