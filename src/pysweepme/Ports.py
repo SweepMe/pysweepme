@@ -25,7 +25,7 @@ import contextlib
 import re
 import socket
 import time
-from typing import Any, Union
+from typing import Union
 
 import psutil
 
@@ -179,7 +179,7 @@ def is_IP(port_str: str) -> tuple[bool, str, int]:
     return True, ip, host
 
 
-def get_port(ID: str, properties: dict[str, Any] | None = None) -> Union[Port, bool]:
+def get_port(ID: str, properties: dict[str, object] | None = None) -> Union[Port, bool]:
     """Returns an open port object for the given ID and port properties"""
     port: Port
 
@@ -266,7 +266,7 @@ def close_port(port: Port) -> None:
 class PortType:
     """base class for any port type such as GPIB, COM, USBTMC, etc."""
 
-    GUIproperties: dict[str, Any] = {}
+    GUIproperties: dict[str, object] = {}
 
     properties = {
         "VID": None,
@@ -450,7 +450,7 @@ class USBdevice:
     # created in order to collect all properties in one object
 
     def __init__(self):
-        self.properties: dict[str, Any] = {}
+        self.properties: dict[str, object] = {}
 
         for name in (
             "Availability",
@@ -548,9 +548,9 @@ class Port:
     """base class for any port"""
 
     def __init__(self, ID: str):
-        self.port: Any = None
+        self.port: object = None
         self.port_ID: str = ID
-        self.port_properties: dict[str, Any] = {
+        self.port_properties: dict[str, object] = {
             # The Port Type, e.g. "COM", "GPIB"
             "type": type(self).__name__[
                 :-4
@@ -592,7 +592,7 @@ class Port:
     def initialize_port_properties_internal(self) -> None:
         """Function to be overwritten by each port to define special default properties."""
 
-    def update_properties(self, properties: dict[str, Any] | None = None) -> None:
+    def update_properties(self, properties: dict[str, object] | None = None) -> None:
         """Update the port properties with the given properties."""
         if properties is None:
             properties = {}

@@ -57,7 +57,7 @@ class EmptyDevice:
         self.shortname = ""
         self.idlevalue = None  # deprecated, remains for compatibility reasons
         self.stopvalue = None  # deprecated, remains for compatibility reasons
-        self.value: Any = None
+        self.value  # the type of value depends on the driver, e.g. it can be a single value, a list of values, ...
 
         self.abort = ""  # deprecated, remains for compatibility reasons
         self.stopMeasurement: str = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
@@ -69,7 +69,7 @@ class EmptyDevice:
         self.port_types: list[str] = []
         self.port_identifications: list[str] = [""]
         self.port_properties: dict[str, Any] = {}
-        self.port: Port | Any | None = None
+        self.port: Port | None = None
 
         self.DeviceClassName = str(self.__class__)[8:-2].split(".")[0]
 
@@ -448,11 +448,11 @@ class EmptyDevice:
 
         return self._latest_parameters
 
-    def set_port(self, port: Any) -> None:
+    def set_port(self, port: Port | None) -> None:
         """Set the port of the device."""
         self.port = port
 
-    def get_port(self) -> Any:
+    def get_port(self) -> Port | None:
         """Get the port of the device."""
         return self.port
 
@@ -554,7 +554,7 @@ class EmptyDevice:
     def process_data(self) -> None:
         """Function to be overridden if needed."""
 
-    def call(self) -> Any:
+    def call(self) -> object:
         """Function to be overridden if needed."""
         return [float("nan") for _ in self.variables]
 
@@ -632,16 +632,16 @@ class EmptyDevice:
 
         return variable_units
 
-    def set_value(self, value: Any) -> None:
+    def set_value(self, value) -> None:
         """Set self.value, which is the value that is applied to the device when calling 'apply'."""
         self.value = value
 
-    def apply_value(self, value: Any) -> None:
+    def apply_value(self, value) -> None:
         """Convenience function for user to apply a value, mainly for use with pysweepme."""
         self.value = value
         self.apply()
 
-    def write(self, value: Any) -> None:
+    def write(self, value) -> None:
         """Applies and reaches the given value as new sweep value for the selected SweepMode."""
         self.start()
         self.apply_value(value)
@@ -649,7 +649,7 @@ class EmptyDevice:
         if hasattr(self, "reach"):
             self.reach()
 
-    def read(self) -> Any:
+    def read(self) -> object:
         """\
         returns a list of values according to functions 'get_variables' and 'get_units'
         convenience function for pysweepme to quickly retrieve values by calling several semantic standard functions.
