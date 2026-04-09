@@ -32,8 +32,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 from pysweepme.Ports import Port
+from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
 from .FolderManager import getFoMa
 
@@ -57,10 +57,10 @@ class EmptyDevice:
         self.shortname = ""
         self.idlevalue = None  # deprecated, remains for compatibility reasons
         self.stopvalue = None  # deprecated, remains for compatibility reasons
-        self.value  # the type of value depends on the driver, e.g. it can be a single value, a list of values, ...
+        self.value = None  # the type of value depends on the driver, e.g. it can be a single value, a list of values...
 
         self.abort = ""  # deprecated, remains for compatibility reasons
-        self.stopMeasurement: str = ""  # deprecated, remains for compatibility reasons, use raise Exception(...) instead
+        self.stopMeasurement: str = ""  # deprecated, remains for compatibility reasons, use raise Exception(...)
 
         # variable that can be overwritten by SweepMe! to indicate that the user requested a stop
         self._is_run_stopped = False

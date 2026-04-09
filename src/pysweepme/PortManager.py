@@ -1,5 +1,4 @@
 # The MIT License
-from __future__ import annotations
 
 # Copyright (c) 2023 SweepMe! GmbH (sweep-me.net)
 
@@ -21,12 +20,14 @@ from __future__ import annotations
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from __future__ import annotations
+
 from collections import OrderedDict
 
-from pysweepme.ErrorMessage import error, debug
-from pysweepme import Ports
-from pysweepme.FolderManager import getFoMa
 from pysweepme import Config
+from pysweepme import Ports
+from pysweepme.ErrorMessage import error, debug
+from pysweepme.FolderManager import getFoMa
 from pysweepme.Ports import Port
 
 try:
@@ -41,7 +42,7 @@ class PortManager(object):
 
     _instance = None
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         if not hasattr(self, "initialized"):
 
@@ -79,7 +80,7 @@ class PortManager(object):
         self.close_all_ports()
         self.close_resourcemanager()
 
-    def clear_portmanager_dialog(self):
+    def clear_portmanager_dialog(self) -> None:
         """ to be overwritten by PortManagerDialog """
         pass
 
@@ -126,18 +127,17 @@ class PortManager(object):
 
         # list all active ports of appropriate type
         for port in self._ports:
-            if self._ports[port].port_properties["type"] in port_types:
+            _port_properties = self._ports[port].port_properties
+            if _port_properties["type"] in port_types:
             
-                if self._ports[port].port_properties["identification"] is not None and \
-                        self._ports[port].port_properties["type"] in ["USB", "USBTMC"]:
-
+                if _port_properties["identification"] is not None and _port_properties["type"] in ["USB", "USBTMC"]:
                     if port_identification is not None:
                         for identification_string in port_identification:
-                            if identification_string in self._ports[port].port_properties["identification"]:
-                                port_list.append(self._ports[port].port_properties["resource"])
+                            if identification_string in str(_port_properties["identification"]):
+                                port_list.append(str(_port_properties["resource"]))
                                 break
                 else:
-                    port_list.append(self._ports[port].port_properties["resource"])
+                    port_list.append(str(_port_properties["resource"]))
         
         return port_list
                
@@ -169,14 +169,17 @@ class PortManager(object):
         # we add the port dialog properties after checking the use of proper keywords as the port dialog might introduce
         # some keywords like 'debug' that are not static properties of the port types
         portdialog_properties = self.get_port_properties_from_dialog(resource)
-        properties.update(portdialog_properties)
+        if properties is None:
+            properties = portdialog_properties
+        else:
+            properties.update(portdialog_properties)
 
         # depending on whether the port already exists or not, we have to create one or use the old one and refresh it.
         if resource not in self._ports:
             try:
                 port = Ports.get_port(resource, properties)
                 
-                if port is False:
+                if not isinstance(port, Port):
                     debug("PortManager: port '%s' cannot be created. Please check the port troubleshooting "
                           "guide in the wiki (F1)." % resource)
                     return False    
@@ -234,7 +237,7 @@ class PortManager(object):
         """
         # all ports if not types are not specified
         if port_types is None:
-            port_types = Ports.port_types
+            port_types = list(Ports.port_types.keys())
 
         resources = {}
         for port_type in port_types:
@@ -252,7 +255,7 @@ class PortManager(object):
         """Returns a list of port types supported by pysweepme.Ports"""
         return Ports.get_porttypes()
         
-    def set_port_logging(self, resource, state):
+    def set_port_logging(self, resource, state) -> None:
         """
         change logging state by resource name
 
@@ -261,7 +264,10 @@ class PortManager(object):
             state: bool
         """
         if resource not in self._ports:
-            self._ports[resource] = Ports.get_port(resource)
+            port = Ports.get_port(resource)
+            if not isinstance(port, Port):
+                return
+            self._ports[resource] = port
 
         self._ports[resource].set_logging(state)
         
@@ -275,7 +281,10 @@ class PortManager(object):
             str -> Identification string
         """
         if resource not in self._ports:
-            self._ports[resource] = Ports.get_port(resource)
+            port = Ports.get_port(resource)
+            if not isinstance(port, Port):
+                return ""
+            self._ports[resource] = port
 
         self.open_port(resource)
         identification = self._ports[resource].get_identification()
