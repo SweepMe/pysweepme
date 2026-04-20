@@ -21,8 +21,9 @@
 # SOFTWARE.
 
 
-import imp
+import importlib.util
 import os
+import sys
 import types
 from pathlib import Path
 
@@ -67,7 +68,13 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
 
     try:
         # Loads .py file as module
-        module = imp.load_source(name, get_main_py_path(folder + os.sep + name))
+        _path = get_main_py_path(folder + os.sep + name)
+        spec = importlib.util.spec_from_file_location(name, _path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not build import spec for '{_path}'")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
     except Exception as e:  # noqa: BLE001
         # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
         error()
