@@ -509,8 +509,8 @@ class SOCKET(PortType):
     properties.update(
         {
             "encoding": "latin-1",
-            "SOCKET_EOLwrite": None,
-            "SOCKET_EOLread": None,
+            "SOCKET_EOLwrite": "\n",
+            "SOCKET_EOLread": "\n",
         },
     )
 
