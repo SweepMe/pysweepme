@@ -28,7 +28,8 @@ from pysweepme import Config
 from pysweepme import Ports
 from pysweepme.ErrorMessage import error, debug
 from pysweepme.FolderManager import getFoMa
-from pysweepme.Ports import Port
+from pysweepme.Ports import Port, PortProperties
+
 
 try:
     import clr  # pythonnet for loading external DotNet DLLs
@@ -141,7 +142,7 @@ class PortManager(object):
         
         return port_list
                
-    def get_port(self, resource: str, properties: dict[str, object] | None = None) -> Port | bool:
+    def get_port(self, resource: str, properties: PortProperties | None = None) -> Port | bool:
         """Returns a port object for a given resource name and properties.
 
         If the port already exists, it is updated with the given properties and returned. If the port does not exist, it
@@ -201,7 +202,7 @@ class PortManager(object):
 
         return self._ports[resource]
 
-    def get_port_properties_from_dialog(self, resource) -> dict[str, object]:
+    def get_port_properties_from_dialog(self, resource: str) -> PortProperties:
         """
         function can be overwritten by a dialog in SweepMe! to return custom port properties for a given resource
         that are overwrite the port properties of the driver
@@ -255,7 +256,7 @@ class PortManager(object):
         """Returns a list of port types supported by pysweepme.Ports"""
         return Ports.get_porttypes()
         
-    def set_port_logging(self, resource, state) -> None:
+    def set_port_logging(self, resource: str, state: bool) -> None:
         """
         change logging state by resource name
 

@@ -593,6 +593,7 @@ class PortProperties(TypedDict, total=False):
     EOLread: str
     EOL: str
     query: str  # ?
+    resource: str  # the resource string of the port, e.g. 'GPIB0::1::INSTR'
 
 
 class Port:
@@ -828,7 +829,7 @@ class GPIBport(Port):
 
 
 class PXIport(Port):
-    port: pyvisa.resources.PXIInstrument
+    port: pyvisa.resources.PXIInstrument | pyvisa.resources.Resource
 
     def __init__(self, ID) -> None:
         super().__init__(ID)
@@ -902,7 +903,13 @@ class ASRLport(Port):
         if _rm is None:
             return
 
-        self.port = _rm.open_resource(self.port_properties["ID"])
+        port = _rm.open_resource(self.port_properties["ID"])
+        if not isinstance(port, pyvisa.resources.SerialInstrument):
+            msg = "ASRL port resource is not a SerialInstrument."
+            raise TypeError(msg)
+
+        self.port = port
+
         self.port.timeout = int(self.port_properties["timeout"]) * 1000  # must be in ms now
         self.port.baud_rate = int(self.port_properties["baudrate"])
         self.port.data_bits = int(self.port_properties["bytesize"])
@@ -939,7 +946,11 @@ class USBTMCport(Port):
         if _rm is None:
             return
 
-        self.port = _rm.open_resource(self.port_properties["ID"])
+        port = _rm.open_resource(self.port_properties["ID"])
+        if not isinstance(port, pyvisa.resources.USBInstrument):
+            msg = "USBTMC port resource is not a USBInstrument."
+            raise TypeError(msg)
+        self.port = port
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
     def close_internal(self) -> None:
@@ -980,7 +991,12 @@ class TCPIPport(Port):
             return
 
         tcpip_address = self.get_ip_address()
-        self.port = _rm.open_resource(tcpip_address)
+        port = _rm.open_resource(tcpip_address)
+        if not isinstance(port, pyvisa.resources.TCPIPInstrument):
+            msg = "TCPIP port resource is not a TCPIPInstrument."
+            raise TypeError(msg)
+
+        self.port = port
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
         if self.port_properties["TCPIP_EOLwrite"]:
@@ -1068,6 +1084,7 @@ class SOCKETport(Port):
         """Extract the host and port of the port string. Use the fixed port if specified."""
         port_id = self.port_properties["ID"]
 
+        port: str | int = ""
         ok, host, port = is_IP(port_id)
         if not ok:
             # this can happen if HOST is no IPv4 address but a domain or localhost
@@ -1364,7 +1381,7 @@ class PrologixGPIBcontroller:
 
         self._current_gpib_ID: str | None = None
 
-        self.ID_port_properties = {}
+        self.ID_port_properties: dict[str, PortProperties] = {}
 
         self.port = serial.Serial()
         self.port.port = self.get_address()
