@@ -121,16 +121,15 @@ def get_resourcemanager() -> pyvisa.ResourceManager | None :
     # to finally return a useful object
     global rm
 
-    if not isinstance(rm, pyvisa.ResourceManager):
-        rm = open_resourcemanager()
+    needs_open = True
+    if isinstance(rm, pyvisa.ResourceManager):
+        try:
+            rm.session  # if object exists the resource manager is open
+            needs_open = False
+        except pyvisa.errors.InvalidSession:
+            needs_open = True
 
-    if rm is None:  # if resource manager could not be opened, we return None and let the ports handle the error
-        return None
-
-    try:
-        rm.session  # if object exists the resource manager is open
-
-    except pyvisa.errors.InvalidSession:
+    if needs_open:
         rm = open_resourcemanager()
 
     return rm
@@ -287,7 +286,7 @@ class PortType:
     }
 
     def __init__(self) -> None:
-        self.ports = {}
+        self.ports: dict[str, Port] = {}
 
     def find_resources(self) -> list[str]:
         """Finds all resources for this port type."""

@@ -157,7 +157,7 @@ class PortManager(object):
         """
         # check whether properties actually exist
         # we have to check it for all possible port types that are supported so far
-        all_port_properties = {}
+        all_port_properties: dict[str, object] = {}
         for port_type in Ports.port_types.values():
             all_port_properties.update(port_type.properties)
         if properties is not None:
