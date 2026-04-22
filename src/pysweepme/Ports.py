@@ -276,8 +276,8 @@ class PortType:
         "query": "",  # unused
         "Exception": True,  # throws exception if no response by port
         "EOL": "\n",
-        "EOLwrite": "",
-        "EOLread": "",
+        "EOLwrite": None,
+        "EOLread": None,
         "timeout": 2,
         "delay": 0.0,
         "rstrip": True,
@@ -373,8 +373,8 @@ class GPIB(PortType):
 
     properties.update(
         {
-            "GPIB_EOLwrite": "",
-            "GPIB_EOLread": "",
+            "GPIB_EOLwrite": None,
+            "GPIB_EOLread": None,
         },
     )
 
@@ -502,8 +502,8 @@ class TCPIP(PortType):
     properties.update(
         {
             "fixed_port": "",  # In case the instrument communicates always on the same standard port
-            "TCPIP_EOLwrite": "",
-            "TCPIP_EOLread": "",
+            "TCPIP_EOLwrite": None,
+            "TCPIP_EOLread": None,
         },
     )
 
@@ -527,8 +527,8 @@ class SOCKET(PortType):
         {
             "fixed_port": "",  # In case the instrument communicates always on the same standard port
             "encoding": "latin-1",
-            "SOCKET_EOLwrite": "",
-            "SOCKET_EOLread": "",
+            "SOCKET_EOLwrite": None,
+            "SOCKET_EOLread": None,
         },
     )
 
@@ -563,18 +563,18 @@ class PortProperties(TypedDict, total=False):
     raw_write: bool
     timeout: float | int
     delay: float | int
-    GPIB_EOLwrite: str
-    GPIB_EOLread: str
-    EOLwrite: str
+    GPIB_EOLwrite: str | None
+    GPIB_EOLread: str | None
+    EOLwrite: str | None
     baudrate: int
     bytesize: int
     stopbits: int
     parity: str
-    TCPIP_EOLwrite: str
-    TCPIP_EOLread: str
+    TCPIP_EOLwrite: str | None
+    TCPIP_EOLread: str | None
     fixed_port: int | str
-    SOCKET_EOLwrite: str
-    SOCKET_EOLread: str
+    SOCKET_EOLwrite: str | None
+    SOCKET_EOLread: str | None
     encoding: str
     xonxoff: bool
     rtscts: bool
@@ -589,7 +589,7 @@ class PortProperties(TypedDict, total=False):
     Product: str
     Description: str
     identification: str
-    EOLread: str
+    EOLread: str  | None
     EOL: str
     query: str  # ?
     resource: str  # the resource string of the port, e.g. 'GPIB0::1::INSTR'
@@ -785,10 +785,10 @@ class GPIBport(Port):
             self.port = resource
             self.port.timeout = float(self.port_properties["timeout"]) * 1000  # must be in ms now
 
-            if self.port_properties["GPIB_EOLwrite"]:
+            if self.port_properties["GPIB_EOLwrite"] is not None:
                 self.port.write_termination = self.port_properties["GPIB_EOLwrite"]
 
-            if self.port_properties["GPIB_EOLread"]:
+            if self.port_properties["GPIB_EOLread"] is not None:
                 self.port.read_termination = self.port_properties["GPIB_EOLread"]
 
     def close_internal(self) -> None:
@@ -998,10 +998,10 @@ class TCPIPport(Port):
         self.port = port
         self.port.timeout = self.port_properties["timeout"] * 1000  # must be in ms now
 
-        if self.port_properties["TCPIP_EOLwrite"]:
+        if self.port_properties["TCPIP_EOLwrite"] is not None:
             self.port.write_termination = self.port_properties["TCPIP_EOLwrite"]
 
-        if self.port_properties["TCPIP_EOLread"]:
+        if self.port_properties["TCPIP_EOLread"] is not None:
             self.port.read_termination = self.port_properties["TCPIP_EOLread"]
 
     def get_ip_address(self) -> str:
@@ -1067,12 +1067,12 @@ class SOCKETport(Port):
         host, port = self.get_host_port()
         self.port.connect((host, port))
 
-        if self.port_properties["SOCKET_EOLwrite"]:
+        if self.port_properties["SOCKET_EOLwrite"] is not None:
             self.write_termination = self.port_properties["SOCKET_EOLwrite"]
         else:
             self.write_termination = ""
 
-        if self.port_properties["SOCKET_EOLread"]:
+        if self.port_properties["SOCKET_EOLread"] is not None:
             self.read_termination = self.port_properties["SOCKET_EOLread"]
         else:
             self.read_termination = ""
@@ -1425,10 +1425,10 @@ class PrologixGPIBcontroller:
 
         terminator = "\r\n"
 
-        if self.ID_port_properties[ID]["GPIB_EOLwrite"]:
+        if self.ID_port_properties[ID]["GPIB_EOLwrite"] is not None:
             terminator = self.ID_port_properties[ID]["GPIB_EOLwrite"]
 
-        if self.ID_port_properties[ID]["GPIB_EOLread"]:
+        if self.ID_port_properties[ID]["GPIB_EOLread"] is not None:
             terminator = self.ID_port_properties[ID]["GPIB_EOLread"]
 
         if terminator in self.terminator_character:
