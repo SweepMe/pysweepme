@@ -1425,11 +1425,13 @@ class PrologixGPIBcontroller:
 
         terminator = "\r\n"
 
-        if self.ID_port_properties[ID]["GPIB_EOLwrite"] is not None:
-            terminator = self.ID_port_properties[ID]["GPIB_EOLwrite"]
+        gpib_eol_write = self.ID_port_properties[ID]["GPIB_EOLwrite"]
+        if gpib_eol_write is not None:
+            terminator = gpib_eol_write
 
-        if self.ID_port_properties[ID]["GPIB_EOLread"] is not None:
-            terminator = self.ID_port_properties[ID]["GPIB_EOLread"]
+        gpib_eol_read = self.ID_port_properties[ID]["GPIB_EOLread"]
+        if gpib_eol_read is not None:
+            terminator = gpib_eol_read
 
         if terminator in self.terminator_character:
             terminator_index = self.terminator_character[terminator]
