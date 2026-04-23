@@ -287,7 +287,7 @@ class FolderManagerInstance(object):
             self.customstylesfolder = self.customresourcesfolder  + os.sep + "styles"
             self.customiconsfolder = self.customresourcesfolder  + os.sep + "icons"
 
-            self.folders = {
+            self.folders: dict[str, str] = {
                             "MAIN": self.mainpath,                  # Folder where SweepMe!.exe is
                             "TEMP": self.tempfolder,                # temporary measurement data in MAIN
                             "RESOURCES": self.resourcesfolder,      # Folder insider MAIN with icon, colormaps, etc.
@@ -412,10 +412,11 @@ class FolderManagerInstance(object):
                     if not root in os.environ["PATH"].split(os.pathsep):
                         os.environ["PATH"] += os.pathsep + root
 
-        
+    def get_path(self, identifier) -> str | bool:
+        """Returns the path for a given identifier, such as 'CUSTOMDEVICES'. Returns false if the identifier is unknown.
 
-    def get_path(self, identifier):
-        
+        If the path does not exist, it is created. This ensures that the path always exists when it is returned.
+        """
         if identifier in self.folders:
             if not os.path.exists(self.folders[identifier]):
                 try: 
@@ -518,7 +519,7 @@ class FolderManager(FolderManagerInstance):
 # But we do not want to initialize the FolderManager already when importing, but only when it is used.
 # This function is mainly for pysweepme itself, as application code which is using pysweepme can also
 # use FolderManager() directly (which is a singleton).
-def getFoMa():
+def getFoMa() -> FolderManager:
     global _FoMa
     if _FoMa is None:
         _FoMa = FolderManager()

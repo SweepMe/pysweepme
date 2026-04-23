@@ -25,12 +25,14 @@ import imp
 import os
 import types
 from pathlib import Path
+from typing import cast
 
 from .Architecture import version_info
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
 from .PortManager import PortManager
+from .Ports import Port, PortProperties
 
 
 def get_main_py_path(path: str) -> str:
@@ -129,8 +131,8 @@ def setup_driver(driver: EmptyDevice, name: str, port_string: str) -> None:
     if port_string != "":
         if driver.port_manager:
             port_manager = PortManager()
-            port = port_manager.get_port(port_string, driver.port_properties)
-            driver.set_port(port)
+            port = port_manager.get_port(port_string, cast(PortProperties, driver.port_properties))
+            driver.set_port(port if isinstance(port, Port) else None)
 
         driver.set_parameters({"Port": port_string, "Device": name})
 
