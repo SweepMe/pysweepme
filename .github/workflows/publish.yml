@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Job Summary
         run: |
-          if [[ "${{ github.ref_name }}" != "main" && "${{ inputs.targetenv || 'testpypi' }}" == "pypi" ]]
+          if [[ "${{ github.ref_name }}" != "1.5.8" && "${{ inputs.targetenv || 'testpypi' }}" == "pypi" ]]
           then
           {
               echo "::error::Publishing to PyPI is only allowed from official branches";
