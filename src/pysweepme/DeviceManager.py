@@ -36,6 +36,19 @@ from .PortManager import PortManager
 from .Ports import Port, PortProperties
 
 
+def _load_source(modname: str, filename: str) -> types.ModuleType:
+    """Load a python module from a source file."""
+    loader = importlib.machinery.SourceFileLoader(modname, filename)
+    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+    if not spec:
+        msg = f"Failed to import from {filename}"
+        raise ImportError(msg)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module.__name__] = module
+    loader.exec_module(module)
+    return module
+
+
 def get_main_py_path(path: str) -> str:
     """Find the main python file matching the current architecture best.
 
@@ -70,13 +83,7 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
 
     try:
         # Loads .py file as module
-        _path = get_main_py_path(folder + os.sep + name)
-        spec = importlib.util.spec_from_file_location(name, _path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not build import spec for '{_path}'")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[name] = module
-        spec.loader.exec_module(module)
+        module = _load_source(name, get_main_py_path(folder + os.sep + name))
     except Exception as e:  # noqa: BLE001
         # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
         error()
