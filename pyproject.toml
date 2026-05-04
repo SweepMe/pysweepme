@@ -2,7 +2,7 @@
 name = "pysweepme"
 description = "Load SweepMe! instrument drivers in your own python projects."
 readme = "README.md"
-requires-python = ">=3.9,<3.12"
+requires-python = ">=3.11,<3.15"
 license = "MIT"
 license-files = ["LICENSE.md"]
 maintainers = [
@@ -18,23 +18,23 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "psutil ~= 5.9.3",
-    "pythonnet ~= 3.0.0.post1",
+    "psutil ~= 7.2.2",
+    "pythonnet ~= 3.1.0rc0",
     "pyserial ~= 3.5",
-    "PyVISA ~= 1.13.0",
+    "PyVISA ~= 1.16.2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "tox ~= 4.6.1",
-    "ruff ~= 0.0.272",
-    "black ~= 23.3.0",
-    "mypy ~= 1.3.0",
-    "pytest ~= 7.3.2"
+    "tox ~= 4.53.1",
+    "ruff ~= 0.15.12",
+    "black ~= 26.3.1",
+    "mypy ~= 1.20.2",
+    "pytest ~= 9.0.3"
 ]
 typed = [
-    "types-psutil ~= 5.9.3",
-    "types-pyserial ~=3.5",
+    "types-psutil ~= 7.2.2",
+    "types-pyserial ~= 3.5",
 ]
 
 [project.urls]
@@ -53,54 +53,9 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py314"
 src = ["src"]
-select = [
-    "F",
-    "E", "W",
-    "C90",
-    "I",
-    "N",
-    "D",
-    "UP",
-    "YTT",
-    "ANN",
-    "ASYNC",
-    "S",
-    "BLE",
-    "B",
-    "A",
-    "COM",
-    "C4",
-    "DTZ",
-    "T10",
-    "EM",
-    "FA",
-    "ISC",
-    "ICN",
-    "G",
-    "INP",
-    "PIE",
-    "T20",
-    "PT",
-    "Q",
-    "RSE",
-    "RET",
-    "SLF",
-    "SIM",
-    "TID",
-    "INT",
-    "ARG",
-    "PTH",
-    "TD",
-    "ERA",
-    "PD",
-    "PL",
-    "TRY",
-    "FLY",
-    "NPY",
-    "RUF",
-]
+select = ["ALL"]
 ignore = [
     "ANN101", "ANN102",
     "D203", "D213", "D406", "D407",
