@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 $versionBranches = @(
     "main",
+    "1.5.8",
     "1.5.7",
     "1.5.6",
     "v1.5.5.x"
