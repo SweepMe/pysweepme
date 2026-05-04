@@ -535,17 +535,13 @@ class SOCKET(PortType):
     def find_resources_internal(self) -> list[str]:
         """Find IPv4 addresses"""
         connections = psutil.net_connections()
-        # For UNIX-type sockets, conn.laddr is a path tuple instead of IP / Port,
-        # so we duck-type: only include entries whose laddr exposes both 'ip' and
-        # 'port' attributes. psutil moved the addr namedtuple between releases
-        # (psutil._common.addr in 5.x -> psutil._ntuples.addr in 7.x), so an
-        # isinstance check against a specific class is fragile.
+        # For UNIX type sockets, conn.laddr will contain a path tuple instead of IP / Port.
+        # Therefore, we must ensure that conn.laddr is actually of the type psutil._ntuples.addr
         connection_strings = [
             f"{conn.laddr.ip}:{conn.laddr.port}"
             for conn in connections
             if conn.status == "LISTEN"
-            and hasattr(conn.laddr, "ip")
-            and hasattr(conn.laddr, "port")
+            and isinstance(conn.laddr, psutil._ntuples.addr)  # noqa: SLF001
             and conn.laddr.ip != "0.0.0.0"  # noqa: S104 (false positive)
             and not conn.laddr.ip.startswith("::")
         ]
