@@ -24,8 +24,10 @@
 
 from __future__ import annotations
 
-from types import TracebackType
-from typing import IO, Any, Protocol, Union
+from typing import IO, Any, Protocol, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class FileIOContextProtocol(Protocol):
@@ -36,8 +38,8 @@ class FileIOContextProtocol(Protocol):
 
     def __exit__(
         self,
-        exc_type: type[Exception] | None,
-        exc_value: Exception | None,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
         """Function to close context manager."""

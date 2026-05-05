@@ -124,7 +124,8 @@ def get_resourcemanager() -> pyvisa.ResourceManager | None :
     needs_open = True
     if isinstance(rm, pyvisa.ResourceManager):
         try:
-            rm.session  # if object exists the resource manager is open
+            # if object exists the resource manager is open
+            rm.session  # noqa: B018  - this is a property, and accessing it actually performs validation in pyvisa
             needs_open = False
         except pyvisa.errors.InvalidSession:
             needs_open = True
@@ -351,9 +352,7 @@ class COM(PortType):
         resources = []
 
         # we list all prologix com port addresses to exclude them from the com port resources
-        prologix_addresses = []
-        for controller in get_prologix_controllers():
-            prologix_addresses.append(controller.get_address())
+        prologix_addresses = [controller.get_address() for controller in get_prologix_controllers()]
 
         try:
             for ID in serial.tools.list_ports.comports():

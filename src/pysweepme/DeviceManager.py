@@ -24,16 +24,18 @@
 import importlib.util
 import os
 import sys
-import types
 from pathlib import Path
-from typing import cast
+from typing import cast, TYPE_CHECKING
 
 from .Architecture import version_info
-from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
 from .PortManager import PortManager
 from .Ports import Port, PortProperties
+
+if TYPE_CHECKING:
+    from .EmptyDeviceClass import EmptyDevice
+    import types
 
 
 def _load_source(modname: str, filename: str) -> types.ModuleType:

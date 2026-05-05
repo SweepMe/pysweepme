@@ -8,7 +8,7 @@ ParsedResult = dict[tuple[str, str], tuple[int, str]]
 Comparison = dict[tuple[str, str], tuple[int, int, str]]
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
-
+logger = logging.getLogger(__name__)
 
 def parse_results(filename: Path) -> ParsedResult:
     """Read json and generate statistics."""
@@ -45,7 +45,7 @@ def compare_results(*, result: ParsedResult, reference: ParsedResult) -> Compari
 def output_violations(comparison: Comparison) -> bool:
     """Print output and return if everything is ok."""
     for key, violation_details in comparison.items():
-        logging.error(
+        logger.error(
             f"Violations increased from {violation_details[0]} to {violation_details[1]} "
             f"for rule {key[1]} [{violation_details[2]}] in file '{key[0]}'.",
         )

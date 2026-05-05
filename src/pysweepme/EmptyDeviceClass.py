@@ -32,10 +32,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pysweepme.Ports import Port
 from pysweepme.UserInterface import message_balloon, message_box, message_info, message_log
 
 from .FolderManager import getFoMa
+
+if TYPE_CHECKING:
+    from pysweepme.Ports import Port
 
 _config = ConfigParser()
 
@@ -625,12 +627,7 @@ class EmptyDevice:
 
     def get_variables_units(self) -> dict[str, str]:
         """Returns a dictionary with variable names as keys and their corresponding units as values."""
-        variable_units = {}
-
-        for var, unit in zip(self.variables, self.units):
-            variable_units[var] = unit
-
-        return variable_units
+        return dict(zip(self.variables, self.units, strict=True))
 
     def set_value(self, value) -> None:
         """Set self.value, which is the value that is applied to the device when calling 'apply'."""

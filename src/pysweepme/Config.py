@@ -107,7 +107,7 @@ class Config(ConfigParser):
         """
         super().__init__()
 
-        self.optionxform = str  # type: ignore
+        self.optionxform = str  # type: ignore[method-assign, assignment]
 
         self.file_name = file_name
 

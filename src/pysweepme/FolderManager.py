@@ -490,6 +490,7 @@ class FolderManager(FolderManagerInstance):
         super().__init__(create, instance_id=self._process_instance_id)
 
     def __new__(cls, *args, **kwargs):
+        del args, kwargs
         # this ensures that the FolderManager can be called multiple times without creating a new instance
         if not isinstance(cls._instance, cls):
             cls._instance = super().__new__(cls)

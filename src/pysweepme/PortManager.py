@@ -59,6 +59,7 @@ class PortManager(object):
             self.initialized = True
 
     def __new__(cls, *args, **kwargs):
+        del args, kwargs
         # create singleton
         if not isinstance(cls._instance, cls):
             cls._instance = object.__new__(cls)

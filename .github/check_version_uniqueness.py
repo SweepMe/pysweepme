@@ -8,8 +8,8 @@ pysweepme_version = importlib.metadata.version("pysweepme")
 not_found = False
 
 try:
-    subprocess.check_call(
-        [  # noqa: S603, S607
+    subprocess.check_call(  # noqa: S603
+        [  # noqa: S607
             "python",
             "-m",
             "pip",
