@@ -24,12 +24,10 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from pysweepme import Config
-from pysweepme import Ports
-from pysweepme.ErrorMessage import error, debug
+from pysweepme import Config, Ports
+from pysweepme.ErrorMessage import debug, error
 from pysweepme.FolderManager import getFoMa
 from pysweepme.Ports import Port, PortProperties
-
 
 try:
     import clr  # pythonnet for loading external DotNet DLLs
@@ -39,14 +37,12 @@ except ImportError:
     error("Cannot import clr package. Please check whether your Microsoft .NET Framework is up to date.")
 
 
-class PortManager(object):
-
+class PortManager:
     _instance = None
 
     def __init__(self) -> None:
 
         if not hasattr(self, "initialized"):
-
             # Adding Prologix controllers
             ProgramConfig = Config.Config(getFoMa().get_file("CONFIG"))
             prologix_controller = ProgramConfig.getConfigOptions("PrologixController")
@@ -66,25 +62,23 @@ class PortManager(object):
         return cls._instance
 
     def startup(self) -> None:
-        """ function is called by SweepMe! """
-        pass
+        """Function is called by SweepMe!"""
 
     def on_load_setting(self) -> None:
-        """ function is called by SweepMe! """
+        """Function is called by SweepMe!"""
         self.clear_portmanager_dialog()
 
     def prepareRun(self) -> None:
-        """ function is called by SweepMe! """
+        """Function is called by SweepMe!"""
         self.open_resourcemanager()
 
     def prepareStop(self) -> None:
-        """ function is called by SweepMe! """
+        """Function is called by SweepMe!"""
         self.close_all_ports()
         self.close_resourcemanager()
 
     def clear_portmanager_dialog(self) -> None:
-        """ to be overwritten by PortManagerDialog """
-        pass
+        """To be overwritten by PortManagerDialog."""
 
     def get_resources_available(self, port_types: list[str], port_identification: list[str] | None = None) -> list[str]:
         """Returns a list of resources for given port types.
@@ -103,7 +97,6 @@ class PortManager(object):
         port_list = []
 
         for port_type in port_types:
-
             if port_type == "USB":
                 port_type = "USBTMC"
 
@@ -131,7 +124,6 @@ class PortManager(object):
         for port in self._ports:
             _port_properties = self._ports[port].port_properties
             if _port_properties["type"] in port_types:
-            
                 if _port_properties["identification"] is not None and _port_properties["type"] in ["USB", "USBTMC"]:
                     if port_identification is not None:
                         for identification_string in port_identification:
@@ -140,9 +132,9 @@ class PortManager(object):
                                 break
                 else:
                     port_list.append(str(_port_properties["resource"]))
-        
+
         return port_list
-               
+
     def get_port(self, resource: str, properties: PortProperties | None = None) -> Port | bool:
         """Returns a port object for a given resource name and properties.
 
@@ -164,8 +156,10 @@ class PortManager(object):
         if properties is not None:
             for key in properties:
                 if key not in all_port_properties:
-                    debug("PortManager: property '%s' of port '%s' is unknown by any port type. Please check the "
-                          "wiki (F1) which keywords are supported." % (key, resource))
+                    debug(
+                        f"PortManager: property '{key}' of port '{resource}' is unknown by any port type. "
+                        " Please check the wiki (F1) which keywords are supported.",
+                    )
 
         # the properties of the driver are overwritten by the properties of the port dialog
         # we add the port dialog properties after checking the use of proper keywords as the port dialog might introduce
@@ -180,19 +174,20 @@ class PortManager(object):
         if resource not in self._ports:
             try:
                 port = Ports.get_port(resource, properties)
-                
+
                 if not isinstance(port, Port):
-                    debug("PortManager: port '%s' cannot be created. Please check the port troubleshooting "
-                          "guide in the wiki (F1)." % resource)
-                    return False    
-                else:
-                    self._ports[resource] = port
-                    
+                    debug(
+                        f"PortManager: port '{resource}' cannot be created. Please check the port troubleshooting "
+                        "guide in the wiki (F1).",
+                    )
+                    return False
+                self._ports[resource] = port
+
             except:
                 error()
                 return False
-                
-        else:        
+
+        else:
             # make sure the initial parameters are set, because the properties of the device class and the port dialog
             # should always be used on top of a fresh set of initialized parameters
             self._ports[resource].initialize_port_properties()
@@ -204,11 +199,10 @@ class PortManager(object):
         return self._ports[resource]
 
     def get_port_properties_from_dialog(self, resource: str) -> PortProperties:
-        """
-        function can be overwritten by a dialog in SweepMe! to return custom port properties for a given resource
+        """Function can be overwritten by a dialog in SweepMe! to return custom port properties for a given resource
         that are overwrite the port properties of the driver
         Args:
-            resource: str
+            resource: str.
 
         Returns:
             dict: port properties
@@ -228,11 +222,10 @@ class PortManager(object):
 
     @staticmethod
     def find_resources(port_types: list[str] | None = None) -> dict[str, list[str]]:
-        """
-        finds resources for given port types. If no port types are given, all possible port types are searched for
+        """Finds resources for given port types. If no port types are given, all possible port types are searched for
         resources
         Args:
-            port_types: List of port types
+            port_types: List of port types.
 
         Returns:
             Dictionary containing a list of resource for each port type key
@@ -248,18 +241,17 @@ class PortManager(object):
             try:
                 resources[port_type] = Ports.port_types[port_type].find_resources()
             except:
-                error("Unable to find ports for %s." % port_type)
+                error(f"Unable to find ports for {port_type}.")
 
         return resources
 
     @staticmethod
     def get_port_types() -> list[str]:
-        """Returns a list of port types supported by pysweepme.Ports"""
+        """Returns a list of port types supported by pysweepme.Ports."""
         return Ports.get_porttypes()
-        
+
     def set_port_logging(self, resource: str, state: bool) -> None:
-        """
-        change logging state by resource name
+        """Change logging state by resource name.
 
         Args:
             resource: str, name of the resource such as "COM1"
@@ -272,12 +264,11 @@ class PortManager(object):
             self._ports[resource] = port
 
         self._ports[resource].set_logging(state)
-        
+
     def get_identification(self, resource: str) -> str:
-        """
-        returns identification string
+        """Returns identification string
         Args:
-            resource: str, resource name, e.g. "GPIB0::1::INSTR"
+            resource: str, resource name, e.g. "GPIB0::1::INSTR".
 
         Returns:
             str -> Identification string
@@ -317,7 +308,7 @@ class PortManager(object):
 
     @staticmethod
     def open_resourcemanager() -> None:
-        """Creates a VISA resource manager, forwards the method from pysweepme.Ports"""
+        """Creates a VISA resource manager, forwards the method from pysweepme.Ports."""
         Ports.get_resourcemanager()
 
     @staticmethod
@@ -329,7 +320,7 @@ class PortManager(object):
     def is_resourcemanager() -> bool:
         """Return True if the VISA resource manager is created, False otherwise."""
         return Ports.is_resourcemanager()
-        
+
     def close_all_ports(self) -> None:
         """Closes all open ports."""
         for resource in self._ports:

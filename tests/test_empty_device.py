@@ -1,4 +1,5 @@
 """Test function of the EmptyDevice class."""
+
 from copy import deepcopy
 from typing import Any
 from unittest.mock import patch

@@ -43,9 +43,9 @@ _config = ConfigParser()
 
 
 class EmptyDevice:
-    actions: list[
-        str
-    ] = []  # static variable that can be used in a driver to define a list of function names that can be used as action
+    actions: list[str] = (
+        []
+    )  # static variable that can be used in a driver to define a list of function names that can be used as action
 
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
@@ -267,8 +267,7 @@ class EmptyDevice:
             driver_parameters = self.update_gui_parameters({})
         else:
             driver_parameters = self.set_GUIparameter()
-        return {k: v[0] if isinstance(v, list) and len(v) > 0 else v
-                for k, v in driver_parameters.items()}
+        return {k: v[0] if isinstance(v, list) and len(v) > 0 else v for k, v in driver_parameters.items()}
 
     def enhance_parameters_with_defaults(self, parameters: dict[str, Any] | None) -> dict[str, Any]:
         """Enhance the parameters dictionary with values from the driver's default parameter values.
@@ -288,7 +287,9 @@ class EmptyDevice:
         return default_parameters | {k: v for k, v in parameters.items() if v is not None}
 
     def update_gui_parameters_with_fallback(
-            self, reading_mode: bool, parameters: dict[str, Any] | None = None,
+        self,
+        reading_mode: bool,
+        parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Update the driver's current parameters with the given values and return the parameters.
 
@@ -349,7 +350,7 @@ class EmptyDevice:
                         and complete them to a valid configuration.
         """
 
-    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002 - defines signature
+    def update_gui_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Determine the new GUI parameters of the driver depending on the current parameters.
 
         The available driver's parameters are updated depending on the values that are passed to this function.
@@ -370,9 +371,11 @@ class EmptyDevice:
             A dictionary where the keys are the fields that shall be shown in the GUI and the values are
             the default value. Simple drivers will always return the same defaults.
         """
-        msg = ("This driver does not implement the update_gui_parameters function. "
-               "use either set_GUIparameter and get_GUIparameter, "
-               "or call the update_gui_parameters_with_fallback function.")
+        msg = (
+            "This driver does not implement the update_gui_parameters function. "
+            "use either set_GUIparameter and get_GUIparameter, "
+            "or call the update_gui_parameters_with_fallback function."
+        )
         raise NotImplementedError(msg)
 
     def reset_latest_parameters(self) -> None:

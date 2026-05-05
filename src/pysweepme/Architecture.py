@@ -1,5 +1,4 @@
 import sys
-from typing import List
 
 
 class VersionInfo:
@@ -8,9 +7,9 @@ class VersionInfo:
     _python_version_short_str: str
     _python_bitness_str: str
     _python_suffix: str
-    _python_compatibility_flags: List[str]
+    _python_compatibility_flags: list[str]
 
-    def extract_information(self):
+    def extract_information(self) -> None:
         if not self._information_extracted:
             version = sys.version_info
             self._python_version_str = f"{version.major}.{version.minor}"
@@ -44,7 +43,7 @@ class VersionInfo:
         return self._python_suffix
 
     @property
-    def python_compatibility_flags(self) -> List[str]:
+    def python_compatibility_flags(self) -> list[str]:
         if not self._information_extracted:
             self.extract_information()
         return self._python_compatibility_flags

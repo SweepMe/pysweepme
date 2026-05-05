@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-from typing import IO, Any, Protocol, Union, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any, Protocol, Union
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -52,7 +52,7 @@ class FileIOProtocolWithoutModifiedCheck(Protocol):
     must be used in conjunction with a `with` statement that will return the file descriptor of the opened file.
     """
 
-    def open(  # noqa: A003, PLR0913
+    def open(
         self,
         mode: str = "r",
         buffering: int = -1,

@@ -40,10 +40,8 @@ try:
 except:
     pass
 
-try:
+with contextlib.suppress(Exception):
     import pyvisa
-except:
-    pass
 
 
 def get_debug_info():
@@ -51,7 +49,7 @@ def get_debug_info():
 
 
 def get_porttypes() -> list[str]:
-    """Returns a list of all supported port types"""
+    """Returns a list of all supported port types."""
     return list(port_types.keys())
 
 
@@ -71,7 +69,7 @@ def get_resources(keys: list[str] | None) -> list[str]:
 
 
 def open_resourcemanager(visafile_path: str = "") -> pyvisa.ResourceManager | None:
-    """Returns an open resource manager instance"""
+    """Returns an open resource manager instance."""
     rm = None
 
     if visafile_path == "":
@@ -98,14 +96,14 @@ def open_resourcemanager(visafile_path: str = "") -> pyvisa.ResourceManager | No
             rm = pyvisa.ResourceManager(visafile_path)
         except:
             error(
-                "Creating resource manager from visa dll file '%s' failed." % visafile_path,
+                f"Creating resource manager from visa dll file '{visafile_path}' failed.",
             )
 
     return rm
 
 
 def close_resourcemanager() -> None:
-    """Closes the current resource manager instance"""
+    """Closes the current resource manager instance."""
     try:
         if rm is not None:
             rm.close()
@@ -113,8 +111,8 @@ def close_resourcemanager() -> None:
         error()
 
 
-def get_resourcemanager() -> pyvisa.ResourceManager | None :
-    """Returns and open resource manager object"""
+def get_resourcemanager() -> pyvisa.ResourceManager | None:
+    """Returns and open resource manager object."""
     # first, we have to figure out whether rm is open or closed
     # of open session is a handle, otherwise an error is raised
     # if rm is closed, we have to renew the resource manager
@@ -137,11 +135,8 @@ def get_resourcemanager() -> pyvisa.ResourceManager | None :
 
 
 def is_resourcemanager() -> bool:
-    """Check whether there is a resource manager instance"""
-    if "rm" in globals():
-        return True
-    else:
-        return False
+    """Check whether there is a resource manager instance."""
+    return "rm" in globals()
 
 
 def is_IP(port_str: str) -> tuple[bool, str, int]:
@@ -165,8 +160,7 @@ def is_IP(port_str: str) -> tuple[bool, str, int]:
     for i in range(1, 5):
         if int(result.group(i)) <= 255:
             continue
-        else:
-            return error_response
+        return error_response
 
     if not 0 < int(result.group(5)) <= 65535:
         return error_response
@@ -178,42 +172,42 @@ def is_IP(port_str: str) -> tuple[bool, str, int]:
 
 
 def get_port(ID: str, properties: PortProperties | None = None) -> Port | bool:
-    """Returns an open port object for the given ID and port properties"""
+    """Returns an open port object for the given ID and port properties."""
     port: Port
 
     if ID.startswith("GPIB"):
         try:
             port = GPIBport(ID)
         except:
-            error("Ports: Cannot create GPIB port object for %s" % ID)
+            error(f"Ports: Cannot create GPIB port object for {ID}")
             return False
     # TODO: Prologix can be removed here, if ID does not start with Prologix anymore
     elif ID.startswith("PXI"):
         try:
             port = PXIport(ID)
         except:
-            error("Ports: Cannot create PXI port object for %s" % ID)
+            error(f"Ports: Cannot create PXI port object for {ID}")
             return False
 
     elif ID.startswith("ASRL"):
         try:
             port = ASRLport(ID)
         except:
-            error("Ports: Cannot create ASRL port object for %s" % ID)
+            error(f"Ports: Cannot create ASRL port object for {ID}")
             return False
 
     elif ID.startswith("TCPIP"):
         try:
             port = TCPIPport(ID)
         except:
-            error("Ports: Cannot create TCPIP port object for %s" % ID)
+            error(f"Ports: Cannot create TCPIP port object for {ID}")
             return False
 
     elif ID.startswith("COM"):
         try:
             port = COMport(ID)
         except:
-            error("Ports: Cannot create COM port object for %s" % ID)
+            error(f"Ports: Cannot create COM port object for {ID}")
             return False
 
     elif ID.startswith("SOCKET") or is_IP(ID)[0]:
@@ -221,18 +215,18 @@ def get_port(ID: str, properties: PortProperties | None = None) -> Port | bool:
         try:
             port = SOCKETport(ID)
         except Exception:
-            error("Ports: Cannot create Socket port object for %s" % ID)
+            error(f"Ports: Cannot create Socket port object for {ID}")
 
-    elif ID.startswith("USB") or ID.startswith("USBTMC"):
+    elif ID.startswith(("USB", "USBTMC")):
         try:
             port = USBTMCport(ID)
         except:
-            error("Ports: Cannot create USBTMC port object for %s" % ID)
+            error(f"Ports: Cannot create USBTMC port object for {ID}")
             return False
 
     else:
         error(
-            "Ports: Cannot create port object for %s as port type is not defined." % ID,
+            f"Ports: Cannot create port object for {ID} as port type is not defined.",
         )
         return False
 
@@ -532,11 +526,11 @@ class SOCKET(PortType):
     )
 
     def find_resources_internal(self) -> list[str]:
-        """Find IPv4 addresses"""
+        """Find IPv4 addresses."""
         connections = psutil.net_connections()
         # For UNIX type sockets, conn.laddr will contain a path tuple instead of IP / Port.
         # Therefore, we must ensure that conn.laddr is actually of the type psutil._ntuples.addr
-        connection_strings = [
+        return [
             f"{conn.laddr.ip}:{conn.laddr.port}"
             for conn in connections
             if conn.status == "LISTEN"
@@ -544,11 +538,11 @@ class SOCKET(PortType):
             and conn.laddr.ip != "0.0.0.0"  # noqa: S104 (false positive)
             and not conn.laddr.ip.startswith("::")
         ]
-        return connection_strings
 
 
 class PortProperties(TypedDict, total=False):
     """TypedDict for the port properties. This is used for type hinting and documentation purposes."""
+
     type: str
     active: bool
     open: bool
@@ -588,14 +582,14 @@ class PortProperties(TypedDict, total=False):
     Product: str
     Description: str
     identification: str
-    EOLread: str  | None
+    EOLread: str | None
     EOL: str
     query: str  # ?
     resource: str  # the resource string of the port, e.g. 'GPIB0::1::INSTR'
 
 
 class Port:
-    """base class for any port"""
+    """base class for any port."""
 
     def __init__(self, ID: str) -> None:
         self.port: object = None
@@ -729,7 +723,7 @@ class Port:
         """Read a command without decoding."""
         return self.read_raw_internal(digits)
 
-    def read_raw_internal(self, digits: int) -> bytes:  # noqa: ARG002
+    def read_raw_internal(self, digits: int) -> bytes:
         """Function to be overwritten by each port to define how to read a command without decoding."""
         msg = (
             f"Reading raw data from port type {self.port_properties['type']} is not implemented yet. "
@@ -818,8 +812,9 @@ class GPIBport(Port):
             answer = self.port.read(self.port_properties["ID"].split("::")[1])
         else:
             if isinstance(self.port, PrologixGPIBcontroller):
+                msg = "Prologix port resource found within non-prologix port object."
                 raise TypeError(
-                    "Prologix port resource found within non-prologix port object.",
+                    msg,
                 )
             answer = self.port.read()
 
@@ -928,9 +923,7 @@ class ASRLport(Port):
         time.sleep(self.port_properties["delay"])
 
     def read_internal(self, digits=0):
-        answer = self.port.read()
-
-        return answer
+        return self.port.read()
 
 
 class USBTMCport(Port):
@@ -966,8 +959,7 @@ class USBTMCport(Port):
         self.port.write(cmd)
 
     def read_internal(self, digits=0):
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
     def read_raw_internal(self, digits: int) -> bytes:
         """Read raw data without decoding."""
@@ -1036,8 +1028,7 @@ class TCPIPport(Port):
         debug(f"{self.get_ip_address()} {msg}")
 
     def read_internal(self, digits=0):
-        answer = self.port.read()
-        return answer
+        return self.port.read()
 
 
 class SOCKETport(Port):
@@ -1182,7 +1173,7 @@ class SOCKETport(Port):
 class COMport(Port):
     port: serial.Serial
 
-    def __init__(self, ID):
+    def __init__(self, ID) -> None:
         super().__init__(ID)
 
         self.port = serial.Serial()
@@ -1267,10 +1258,10 @@ class COMport(Port):
                     answer = answer.decode(self.port_properties["encoding"])
                 except:
                     error(
-                        "Unable to decode the reading from %s. Please check whether the baudrate "
+                        "Unable to decode the reading from {}. Please check whether the baudrate "
                         "and the terminator are correct (Ports -> PortManager -> COM). "
                         "You can get the raw reading by setting the key 'raw_read' of "
-                        "self.port_properties to True" % (self.port_properties["ID"]),
+                        "self.port_properties to True".format(self.port_properties["ID"]),
                     )
                     raise
 
@@ -1284,18 +1275,23 @@ class COMport(Port):
                     answer = answer.decode(self.port_properties["encoding"])
                 except:
                     error(
-                        "Unable to decode the reading from %s. Please check whether the baudrate "
+                        "Unable to decode the reading from {}. Please check whether the baudrate "
                         "and the terminator are correct (Ports -> PortManager -> COM). "
                         "You can get the raw reading by setting the key 'raw_read' of "
-                        "self.port_properties to True" % (self.port_properties["ID"]),
+                        "self.port_properties to True".format(self.port_properties["ID"]),
                     )
                     raise
 
         if answer == "" and not EOLfound and self.port_properties["Exception"] is True:
+            msg = (
+                "Port '{}' with ID '{}' does not respond.\n"
+                "Check port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM".format(
+                    self.port_properties["type"],
+                    self.port_properties["ID"],
+                )
+            )
             raise Exception(
-                "Port '%s' with ID '%s' does not respond.\n"
-                "Check port properties, e.g. timeout, EOL,.. via Port -> PortManager -> COM"
-                % (self.port_properties["type"], self.port_properties["ID"]),
+                msg,
             )
 
         return answer
@@ -1370,7 +1366,6 @@ class COMport(Port):
 
 
 class PrologixGPIBcontroller:
-
     def __init__(self, address) -> None:
         # basically the address could be used for COM ports but also for Ethernet
         # at the moment, only COM is supported, but Ethernet could be added later
@@ -1401,8 +1396,7 @@ class PrologixGPIBcontroller:
     def list_resources(self) -> list[str]:
         if self._address:
             return ["GPIB::%i::Prologix@%s" % (i, self._address) for i in range(1, 31, 1)]
-        else:
-            return []
+        return []
 
     def open(self, port_properties) -> None:
         ID = port_properties["ID"].split("::")[1]
@@ -1436,8 +1430,7 @@ class PrologixGPIBcontroller:
             terminator_index = self.terminator_character[terminator]
         else:
             debug(
-                "Terminator '%s' cannot be set for Prologix adapter at %s. "
-                "Fallback to CR/LF." % (repr(terminator), str(ID)),
+                f"Terminator '{terminator!r}' cannot be set for Prologix adapter at {ID!s}. Fallback to CR/LF.",
             )
             terminator_index = 0  # CR/LF
 
@@ -1463,7 +1456,7 @@ class PrologixGPIBcontroller:
 
     def write(self, cmd="", ID="") -> None:
         """Sends a non-empty command string to the prologix controller
-        and changes the GPIB address if needed beforehand
+        and changes the GPIB address if needed beforehand.
         """
         if cmd != "":
             if ID == "" or cmd.startswith("++"):
@@ -1475,7 +1468,7 @@ class PrologixGPIBcontroller:
 
                     # set to current GPIB address
                     # calls 'write' again, but as the command starts with '++' will not lead to an endless iteration
-                    self.write("++addr %s" % self._current_gpib_ID)
+                    self.write(f"++addr {self._current_gpib_ID}")
 
                 # some special characters need to be escaped before sending
                 # we start to replace ESC as it will be added by other commands as well
@@ -1491,7 +1484,7 @@ class PrologixGPIBcontroller:
             self.port.write(msg)
 
     def read(self, ID):
-        """Requests an answer from the instruments and returns it"""
+        """Requests an answer from the instruments and returns it."""
         # needed to make sure that there is a short delay since the last write
         # time.sleep(self.ID_port_properties[ID]["delay"])
 
@@ -1519,7 +1512,7 @@ class PrologixGPIBcontroller:
         self.write("++ifc")
 
     def set_mode(self, mode) -> None:
-        self.write("++mode %s" % str(mode))
+        self.write(f"++mode {mode!s}")
 
     def get_mode(self):
         self.write("++mode")
@@ -1527,7 +1520,7 @@ class PrologixGPIBcontroller:
 
     def set_eos(self, eos) -> None:
         self.write(
-            "++eos %s" % str(eos),
+            f"++eos {eos!s}",
         )  # EOS terminator - 0:CR+LF, 1:CR, 2:LF, 3:None
 
     def get_eos(self):
@@ -1535,7 +1528,7 @@ class PrologixGPIBcontroller:
         return self.port.readline().rstrip().decode()
 
     def set_eoi(self, eoi) -> None:
-        self.write("++eoi %s" % str(eoi))  # 0 = no eoi at end, 1 = eoi at end
+        self.write(f"++eoi {eoi!s}")  # 0 = no eoi at end, 1 = eoi at end
 
     def get_eoi(self):
         self.write("++eoi")
@@ -1543,7 +1536,7 @@ class PrologixGPIBcontroller:
 
     def set_auto(self, auto) -> None:
         self.write(
-            "++auto %s" % str(auto),
+            f"++auto {auto!s}",
         )  # 0 not read-after-write, 1 = read-after-write
 
     def get_auto(self):
@@ -1551,7 +1544,7 @@ class PrologixGPIBcontroller:
         return self.port.readline().rstrip().decode()
 
     def set_read_timeout(self, readtimeout) -> None:
-        """Set the read timeout in s"""
+        """Set the read timeout in s."""
         # conversion from s to ms, maximum is 3000, minimum is 1
         self.write(
             "++read_tmo_ms %i" % int(max(1, min(3000, float(readtimeout) * 1000))),
@@ -1564,7 +1557,7 @@ class PrologixGPIBcontroller:
     def set_listenonly(self, listenonly) -> None:
         """Set listen-only, only supported in mode = device!"""
         self.write(
-            "++lon %s" % str(listenonly),
+            f"++lon {listenonly!s}",
         )  # 0 disable 'listen-only' mode, 1 enable 'listen-only' mode
 
     def get_listenonly(self):
@@ -1582,8 +1575,7 @@ def add_prologix_controller(address) -> None:
 
 
 def remove_prologix_controller(address: str) -> None:
-    if address in prologix_controller:
-        del prologix_controller[address]
+    prologix_controller.pop(address, None)
 
 
 def get_prologix_controllers() -> list[PrologixGPIBcontroller]:

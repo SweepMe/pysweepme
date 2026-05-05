@@ -10,6 +10,7 @@ Comparison = dict[tuple[str, str], tuple[int, int, str]]
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def parse_results(filename: Path) -> ParsedResult:
     """Read json and generate statistics."""
     parsed_results: ParsedResult = {}
@@ -49,9 +50,7 @@ def output_violations(comparison: Comparison) -> bool:
             f"Violations increased from {violation_details[0]} to {violation_details[1]} "
             f"for rule {key[1]} [{violation_details[2]}] in file '{key[0]}'.",
         )
-    if len(comparison) > 0:
-        return False
-    return True
+    return not len(comparison) > 0
 
 
 result = parse_results(Path("ruff.json"))

@@ -1,11 +1,11 @@
 """Test pysweepme DeviceManager functions."""
 
 import sys
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from pysweepme.DeviceManager import get_driver, get_driver_instance, get_main_py_path
 from pysweepme.EmptyDeviceClass import EmptyDevice
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,9 +30,7 @@ class TestDeviceManager:
         def is_file(self: Path) -> bool:
             if self.name == "main.py":
                 return True
-            if self.name == f"main_{python_version}_{bitness}.py" and specific_exists:
-                return True
-            return False
+            return bool(self.name == f"main_{python_version}_{bitness}.py" and specific_exists)
 
         with patch("DeviceManager.Path.is_file", new=is_file):
             path = "C:\\my_dc_dir"
@@ -50,9 +48,12 @@ class TestDeviceManager:
         class LoadSource:
             Device = CustomDevice
 
-        with patch("DeviceManager.imp.load_source") as mocked_load_soure, patch(
-            "DeviceManager.get_main_py_path",
-        ) as mocked_get_main_py_path:
+        with (
+            patch("DeviceManager.imp.load_source") as mocked_load_soure,
+            patch(
+                "DeviceManager.get_main_py_path",
+            ) as mocked_get_main_py_path,
+        ):
             mocked_load_soure.return_value = LoadSource
             mocked_get_main_py_path.return_value = found_path
             device = get_driver_instance(folder, name)

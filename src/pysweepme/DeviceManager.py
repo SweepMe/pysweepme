@@ -25,7 +25,7 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
-from typing import cast, TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .Architecture import version_info
 from .ErrorMessage import error
@@ -34,8 +34,9 @@ from .PortManager import PortManager
 from .Ports import Port, PortProperties
 
 if TYPE_CHECKING:
-    from .EmptyDeviceClass import EmptyDevice
     import types
+
+    from .EmptyDeviceClass import EmptyDevice
 
 
 def _load_source(modname: str, filename: str) -> types.ModuleType:
@@ -86,7 +87,7 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
     try:
         # Loads .py file as module
         module = _load_source(name, get_main_py_path(folder + os.sep + name))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
         error()
         msg = f"Cannot load Driver '{name}' from folder {folder}."
