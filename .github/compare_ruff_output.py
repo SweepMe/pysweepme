@@ -14,7 +14,7 @@ def parse_results(filename: Path) -> ParsedResult:
     """Read json and generate statistics."""
     parsed_results: ParsedResult = {}
     for violation in json.loads(filename.read_text()):
-        key = (violation["filename"].replace(r"\.tox\reference", ""), violation["code"])
+        key = (violation["filename"].replace("\\.reference\\", "\\"), violation["code"])
         count = parsed_results.get(key, (0, ""))[0] + 1
         parsed_results[key] = (count, violation["message"])
     return parsed_results
