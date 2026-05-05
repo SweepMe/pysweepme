@@ -1,4 +1,5 @@
 """Test deprecated decorator."""
+
 import re
 from unittest.mock import PropertyMock, patch
 

@@ -2,10 +2,13 @@ import functools
 import inspect
 import re
 from itertools import zip_longest
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from . import __version__
 from .ErrorMessage import debug
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _get_pysweepme_version_tuple(version: str) -> tuple[int, ...]:
@@ -22,10 +25,8 @@ _pysweepme_version = _get_pysweepme_version_tuple(__version__)
 def _is_version_reached(version: str) -> bool:
     version_tuple = tuple(map(int, version.split(".")))
     # zip and un-zip the version tuples to make them same length
-    version_tuple, compare = zip(*zip_longest(version_tuple, _pysweepme_version, fillvalue=0))
-    if version_tuple > compare:
-        return False
-    return True
+    version_tuple, compare = zip(*zip_longest(version_tuple, _pysweepme_version, fillvalue=0), strict=True)
+    return not version_tuple > compare
 
 
 def deprecated(
@@ -46,7 +47,7 @@ def deprecated(
                     code = (frame.code_context or [""])[0].strip()
                     line = frame.lineno
                     blame = f" ['{code.strip()}' in '{file}', line {line}]"
-                except (TypeError, OSError):
+                except TypeError, OSError:
                     blame = ""
                 return blame
 

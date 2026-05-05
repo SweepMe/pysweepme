@@ -21,23 +21,23 @@
 # SOFTWARE.
 
 from __future__ import annotations
+
+import contextlib
+import inspect
 import os
 import sys
-import inspect
 from pathlib import Path
-from typing import Optional
 
 from .Architecture import version_info
-from .ErrorMessage import error, debug
-
+from .ErrorMessage import debug, error
 
 # global variable that saves a temporarily set path that could be added to PATH in case addFolderToPATH is called
 # the variable was introduced with SweepMe! 1.5.4 to set a path during loading Modules
 # as modules are not directly loaded
-TemporaryFolderForPATH: Optional[str] = None
+TemporaryFolderForPATH: str | None = None
 
 
-_FoMa: Optional[FolderManager] = None
+_FoMa: FolderManager | None = None
 
 
 def _prepend_to_os_path(path_to_prepend: Path) -> None:
@@ -104,8 +104,8 @@ def addFolderToPATH(path_to_add: str = "") -> bool:
         _add_libs_dirs_to_path(libs_path)
 
     return True
-    
-    
+
+
 def addModuleFolderToPATH(path_to_add: str = "") -> bool:
     """Add libraries folder of calling module to the PATH.
 
@@ -117,66 +117,67 @@ def addModuleFolderToPATH(path_to_add: str = "") -> bool:
             main_path = path_to_add
         else:
             return False
-            
+
     elif TemporaryFolderForPATH is not None and Path(TemporaryFolderForPATH).exists():
         main_path = TemporaryFolderForPATH
-    
+
     else:
         main_file = inspect.stack()[1][1]
         main_path = str(Path(main_file).resolve().parent.absolute())
 
     return addFolderToPATH(main_path)
-    
-    
-def setTemporaryFolderForPATH(path_to_set):
+
+
+def setTemporaryFolderForPATH(path_to_set) -> None:
     global TemporaryFolderForPATH
     TemporaryFolderForPATH = path_to_set
 
 
-def unsetTemporaryFolderForPATH():
+def unsetTemporaryFolderForPATH() -> None:
     global TemporaryFolderForPATH
     TemporaryFolderForPATH = None
-    
-         
+
+
 def get_path(identifier):
-    """ returns a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ... """
+    """Returns a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ..."""
     FoMa = getFoMa()
     if identifier in FoMa.folders:
         return FoMa.get_path(identifier)
-    else:
-        debug("FolderManager: Folder %s unknown" % identifier)
-        return False
+    debug(f"FolderManager: Folder {identifier} unknown")
+    return False
 
 
-def set_path(identifier, path):
-    """ sets a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ... """
+def set_path(identifier, path) -> bool:
+    """Sets a path for a given identifier, such as 'CUSTOMDEVICES', 'DEVICES', ..."""
     FoMa = getFoMa()
     if identifier in FoMa.folders:
         FoMa.set_path(identifier, path)
     else:
-        debug("FolderManager: Folder %s unknown" % identifier)
+        debug(f"FolderManager: Folder {identifier} unknown")
         return False
-    
-            
+    return True
+
+
 def get_file(identifier):
     FoMa = getFoMa()
     if identifier in FoMa.files:
         return FoMa.get_file(identifier)
-    else:
-        debug("FolderManager: File %s unknown" % identifier)
-        return False
+    debug(f"FolderManager: File {identifier} unknown")
+    return False
 
 
 def set_file(identifier, path):
     FoMa = getFoMa()
     if identifier in FoMa.files:
         return FoMa.set_file(identifier, path)
+    return None
 
 
-# remains for compatibility 
+# remains for compatibility
 def main_is_frozen():
     return is_main_frozen()
-    
+
+
 def is_main_frozen():
     return hasattr(sys, "frozen")
 
@@ -184,11 +185,9 @@ def is_main_frozen():
 # This class allows to create multiple instances of the folder manager. This is only required in
 # rare cases, like getting a folder manager instance that corresponds to the folders of a different
 # process with another instance_id and other paths for the writable objects.
-class FolderManagerInstance(object):
-
-    def __init__(self, create=False, instance_id=None):
-        """create defines whether folders are created. When used with pysweepme, the default will not create folders"""
-    
+class FolderManagerInstance:
+    def __init__(self, create=False, instance_id=None) -> None:
+        """Create defines whether folders are created. When used with pysweepme, the default will not create folders."""
         # this ensures that the FolderManager can be called multiple times without performing __init__ every time
         if not hasattr(self, "_is_init_complete"):
             self._is_init_complete = True
@@ -204,31 +203,39 @@ class FolderManagerInstance(object):
             else:
                 self._instance_suffix = ""
 
-            # define variables for all folders   
-            self.mainpath = self.get_main_dir() 
-            
+            # define variables for all folders
+            self.mainpath = self.get_main_dir()
+
             mainpath_files = os.listdir(self.mainpath)
-                        
+
             self.is_sweepme_executable = "SweepMe!.exe" in mainpath_files and self.main_is_frozen()
-            self.is_portable_mode = not "installed.ini" in mainpath_files
-        
+            self.is_portable_mode = "installed.ini" not in mainpath_files
+
             if sys.platform == "win32":
-            
-                from . import WinFolder # also needed for portable mode
-                
-                self.publicpath = os.path.join(WinFolder.get_path( WinFolder.FOLDERID.PublicDocuments ), 'SweepMe!' )
-                self.roamingpath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.RoamingAppData, WinFolder.UserHandle.current ), 'SweepMe!' )
-                self.localpath = os.path.join( WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current ), 'SweepMe!' )
-                self.programdatapath = os.path.join( WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!' )
-                self.programdatapath_variable = os.path.join( WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!' )
-                
-                self.tempfolder = self.localpath + os.sep + f'temp{self._instance_suffix}'
-            
-                    
-                if self.is_sweepme_executable and self.is_portable_mode:  # portable mode -> we overwrite the default paths 
-                    
+                from . import WinFolder  # also needed for portable mode
+
+                self.publicpath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.PublicDocuments), "SweepMe!")
+                self.roamingpath = os.path.join(
+                    WinFolder.get_path(WinFolder.FOLDERID.RoamingAppData, WinFolder.UserHandle.current),
+                    "SweepMe!",
+                )
+                self.localpath = os.path.join(
+                    WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current),
+                    "SweepMe!",
+                )
+                self.programdatapath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.ProgramData), "SweepMe!")
+                self.programdatapath_variable = os.path.join(
+                    WinFolder.get_path(WinFolder.FOLDERID.ProgramData),
+                    "SweepMe!",
+                )
+
+                self.tempfolder = self.localpath + os.sep + f"temp{self._instance_suffix}"
+
+                if (
+                    self.is_sweepme_executable and self.is_portable_mode
+                ):  # portable mode -> we overwrite the default paths
                     self.portable_data_path = os.path.dirname(self.mainpath) + os.sep + "SweepMe! user data"
-                    
+
                     if self.is_sweepme_executable:  # otherwise a folder is created if pysweepme is used standalone
                         if not os.path.exists(self.portable_data_path):
                             os.mkdir(self.portable_data_path)
@@ -236,12 +243,15 @@ class FolderManagerInstance(object):
                     self.publicpath = self.portable_data_path + os.sep + "public"
                     self.roamingpath = self.portable_data_path + os.sep + "roaming"
                     self.localpath = self.portable_data_path + os.sep + "local"
-                    self.programdatapath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.ProgramData), 'SweepMe!')
+                    self.programdatapath = os.path.join(WinFolder.get_path(WinFolder.FOLDERID.ProgramData), "SweepMe!")
                     self.programdatapath_variable = self.portable_data_path + os.sep + "programdata"
-                    
+
                     self.tempfolder = (
                         WinFolder.get_path(WinFolder.FOLDERID.LocalAppData, WinFolder.UserHandle.current)
-                        + os.sep + 'SweepMe!' + os.sep + 'temp{self._instance_suffix}'
+                        + os.sep
+                        + "SweepMe!"
+                        + os.sep
+                        + f"temp{self._instance_suffix}"
                     )
 
             elif sys.platform.startswith("linux"):
@@ -250,7 +260,6 @@ class FolderManagerInstance(object):
                 self.roamingpath = "."
                 self.localpath = "."
                 self.programdatapath = "."
-
 
             self.libsfolder = self.mainpath + os.sep + "libs"
 
@@ -283,111 +292,90 @@ class FolderManagerInstance(object):
             self.interfacesfolder = self.mainpath + os.sep + "libs" + os.sep + "interfaces"
             self.widgetsfolder = self.mainpath + os.sep + "Widgets"
             self.customresourcesfolder = self.publicpath + os.sep + "Resources"
-            self.customcolormapsfolder = self.customresourcesfolder  + os.sep + "colormaps"
-            self.customstylesfolder = self.customresourcesfolder  + os.sep + "styles"
-            self.customiconsfolder = self.customresourcesfolder  + os.sep + "icons"
+            self.customcolormapsfolder = self.customresourcesfolder + os.sep + "colormaps"
+            self.customstylesfolder = self.customresourcesfolder + os.sep + "styles"
+            self.customiconsfolder = self.customresourcesfolder + os.sep + "icons"
 
             self.folders: dict[str, str] = {
-                            "MAIN": self.mainpath,                  # Folder where SweepMe!.exe is
-                            "TEMP": self.tempfolder,                # temporary measurement data in MAIN
-                            "RESOURCES": self.resourcesfolder,      # Folder insider MAIN with icon, colormaps, etc.
-                            "DATA": self.measurementfolder,         # Measurement data in PUBLIC
-                            "SETTINGS": self.settingfolder,         # Settings in PUBLIC
+                "MAIN": self.mainpath,  # Folder where SweepMe!.exe is
+                "TEMP": self.tempfolder,  # temporary measurement data in MAIN
+                "RESOURCES": self.resourcesfolder,  # Folder insider MAIN with icon, colormaps, etc.
+                "DATA": self.measurementfolder,  # Measurement data in PUBLIC
+                "SETTINGS": self.settingfolder,  # Settings in PUBLIC
+                "ROAMINGSETTINGS": self.roamingsetting,  # Settings in ROAMING
+                "EXAMPLES": self.examplesfolder,  # Example settings in MAIN
+                "PROFILES": self.profilesfolder,  # Profile inis in ROAMING
+                # ProgramData path for things that need be accessed by all user but should not be seen easily
+                "PROGRAMDATA": self.programdatapath,
+                "DEVICES": self.DCfolder,  # Devices in MAIN
+                "MODULES": self.modulesfolder,  # Modules in MAIN
+                "WIDGETS": self.widgetsfolder,  # WIDGETS in MAIN
+                "INTERFACES": self.interfacesfolder,  # INTERFACES in MAIN\libs
+                "SHAREDDEVICES": self.shareddevicesfolder,  # Devices in ProgramData
+                "SHAREDMODULES": self.sharedmodulesfolder,  # Modules in ProgramData
+                "VERSIONS": self.versionsfolder,  # Versions in ProgramData
+                "CONFIG": self.configfolder,  # Config folder in ProgramData
+                "SERVER": self.serverfolder,  # Server folder in ProgramData / Config folder
+                "CUSTOMDEVICESOLD": self.customDCfolderold,  # DeviceClasses in PUBLIC
+                "CUSTOMDEVICES": self.customDCfolder,  # Devices in PUBLIC
+                "CUSTOMMODULES": self.customMCfolder,  # Modules in PUBLIC
+                "DATAMODULES": self.MCDatafolder,  # Folder for Module specific data in PUBLIC
+                "DATADEVICES": self.DCDatafolder,  # Folder for Device specific data in PUBLIC
+                "SCREENSHOTS": self.screenshotfolder,  # Folder for screenshots in PUBLIC
+                "LOCAL": self.localpath,  # Local windows user appdata
+                "ROAMING": self.roamingpath,  # Roaming windows user appdata
+                "PUBLIC": self.publicpath,  # Public documents folder for SweepMe!
+                # "SWEEPSCRIPTS": self.sweepscriptfolder, # Sweep script folder in PUBLIC
+                "PYTHONSCRIPTS": self.pythonscriptsfolder,
+                "CALIBRATIONS": self.calibrationfolder,  # Calibration folder in PUBLIC
+                "CUSTOM": self.customfolder,  # Custom files in PUBLIC
+                "CUSTOMFILES": self.customfolder,  # Custom files in PUBLIC
+                "CUSTOMRESOURCES": self.customresourcesfolder,  # Custom resources in PUBLIC
+                "CUSTOMCOLORMAPS": self.customcolormapsfolder,  # Custom colormaps in PUBLIC
+                "CUSTOMSTYLES": self.customstylesfolder,  # Custom styles in PUBLIC
+                "CUSTOMICONS": self.customiconsfolder,  # Custom icons in PUBLIC
+                # "SYSTEMUSER": self.systemuserpath,      # SweepMe! folder in system user folder
+                "EXTLIBS": self.extlibsfolder,  # External libraries such as dll in PUBLIC
+            }
 
-                            "ROAMINGSETTINGS": self.roamingsetting, # Settings in ROAMING
-                            "EXAMPLES": self.examplesfolder,        # Example settings in MAIN
-                            "PROFILES": self.profilesfolder,        # Profile inis in ROAMING
-
-                            "PROGRAMDATA": self.programdatapath,    # ProgramData path for things that need be accessed by all user but should not be seen easily
-
-                            "DEVICES": self.DCfolder,               # Devices in MAIN
-                            "MODULES": self.modulesfolder,          # Modules in MAIN
-
-                            "WIDGETS": self.widgetsfolder,          # WIDGETS in MAIN
-                            "INTERFACES": self.interfacesfolder,    # INTERFACES in MAIN\libs
-
-                            "SHAREDDEVICES": self.shareddevicesfolder,  # Devices in ProgramData
-                            "SHAREDMODULES": self.sharedmodulesfolder,  # Modules in ProgramData
-                            "VERSIONS": self.versionsfolder,            # Versions in ProgramData
-
-                            "CONFIG": self.configfolder,             # Config folder in ProgramData
-                            "SERVER": self.serverfolder,             # Server folder in ProgramData / Config folder
-
-                            "CUSTOMDEVICESOLD": self.customDCfolderold,# DeviceClasses in PUBLIC
-                            "CUSTOMDEVICES": self.customDCfolder,   # Devices in PUBLIC
-                            "CUSTOMMODULES": self.customMCfolder,   # Modules in PUBLIC
-
-                            "DATAMODULES": self.MCDatafolder,       # Folder for Module specific data in PUBLIC
-                            "DATADEVICES": self.DCDatafolder,       # Folder for Device specific data in PUBLIC
-
-                            "SCREENSHOTS": self.screenshotfolder,   # Folder for screenshots in PUBLIC
-
-                            "LOCAL": self.localpath,                # Local windows user appdata
-                            "ROAMING": self.roamingpath,            # Roaming windows user appdata
-                            "PUBLIC": self.publicpath,              # Public documents folder for SweepMe!
-                            # "SWEEPSCRIPTS": self.sweepscriptfolder, # Sweep script folder in PUBLIC
-                            "PYTHONSCRIPTS": self.pythonscriptsfolder,
-                            "CALIBRATIONS": self.calibrationfolder, # Calibration folder in PUBLIC
-                            "CUSTOM": self.customfolder,            # Custom files in PUBLIC
-                            "CUSTOMFILES": self.customfolder,       # Custom files in PUBLIC
-                            "CUSTOMRESOURCES": self.customresourcesfolder, # Custom resources in PUBLIC
-                            "CUSTOMCOLORMAPS": self.customcolormapsfolder, # Custom colormaps in PUBLIC
-                            "CUSTOMSTYLES": self.customstylesfolder, # Custom styles in PUBLIC
-                            "CUSTOMICONS": self.customiconsfolder, # Custom icons in PUBLIC
-
-
-
-                            # "SYSTEMUSER": self.systemuserpath,      # SweepMe! folder in system user folder
-                            "EXTLIBS": self.extlibsfolder,          # External libraries such as dll in PUBLIC
-                            }
-
-            self.profileuserfile = None # because we do not know which profile will be selected
-            self.systemuserfile = self.roamingpath + os.sep + 'OSuser.ini'
-            self.userfile = self.mainpath + os.sep + 'user.txt'
-            self.configfile = self.configfolder + os.sep + 'config.ini'
+            self.profileuserfile = None  # because we do not know which profile will be selected
+            self.systemuserfile = self.roamingpath + os.sep + "OSuser.ini"
+            self.userfile = self.mainpath + os.sep + "user.txt"
+            self.configfile = self.configfolder + os.sep + "config.ini"
             self.texteditor = self.libsfolder + os.sep + "Pnotepad" + os.sep + "pn.exe"
             self.logbookfile = self.tempfolder + os.sep + "temp_logbook.txt"
             self.debugfile = self.publicpath + os.sep + f"debug{self._instance_suffix}.log"
             self.debugfhfile = self.publicpath + os.sep + f"debug_fh{self._instance_suffix}.log"
-                          
-            # print("FolderManager: self.files redefined")                
+
+            # print("FolderManager: self.files redefined")
             self.files = {
-                            "PROFILEINI": self.profileuserfile, # Configuration ini of Profile
-                            "OSUSERINI": self.systemuserfile,   # System user config file in ROAMING
-                            "CONFIG": self.configfile,          # Configuration folder in MAIN
-                            
-                            "SWEEPMEICON":self.SweepMeIcon,     # SweepMe! icon in resources 
-                            "TEXTEDITOR": self.texteditor,      # Texteditor
-                            "LOGBOOK": self.logbookfile,        # Logbook file in tempfolder
-                            "DEBUG": self.debugfile,            # debug file in public folder
-                            "DEBUGFH": self.debugfhfile,        # debug faulthandler file in public folder
-                         }
-                
+                "PROFILEINI": self.profileuserfile,  # Configuration ini of Profile
+                "OSUSERINI": self.systemuserfile,  # System user config file in ROAMING
+                "CONFIG": self.configfile,  # Configuration folder in MAIN
+                "SWEEPMEICON": self.SweepMeIcon,  # SweepMe! icon in resources
+                "TEXTEDITOR": self.texteditor,  # Texteditor
+                "LOGBOOK": self.logbookfile,  # Logbook file in tempfolder
+                "DEBUG": self.debugfile,  # debug file in public folder
+                "DEBUGFH": self.debugfhfile,  # debug faulthandler file in public folder
+            }
+
         if create:
             self.create_folders()
 
-    def create_folders(self): 
-        
+    def create_folders(self) -> None:
+
         for folder in [self.publicpath, self.roamingpath, self.localpath, self.programdatapath_variable]:
-        
-            # Important: We don't want to make Progamdata folder here as this would result in a folder that can only be written
-            # by the user that created it first time. 
+            # Important: We don't want to make Progamdata folder here as this would result in a folder
+            # that can only be written by the user that created it first time.
             # we use os.path.abspath to make sure the folder format is the same
-            if not os.path.abspath(folder) in os.path.abspath(self.folders["PROGRAMDATA"]):
+            if os.path.abspath(folder) not in os.path.abspath(self.folders["PROGRAMDATA"]):
                 if not os.path.exists(folder):
                     os.mkdir(folder)
-                
-           
+
         ### add path if they do not exist
         for key in self.folders:
-            
             # This folder is not used anymore and should not be used anymore
-            if key == "CUSTOMDEVICESOLD":
-                continue
-                
-            # Important: We don't want to make Progamdata folder here as this would result in a folder that can only be written
-            # by the user that created it first time.    
-            elif key == "PROGRAMDATA":
+            if key in {"CUSTOMDEVICESOLD", "PROGRAMDATA"}:
                 continue
 
             if not os.path.exists(self.folders[key]):
@@ -395,21 +383,19 @@ class FolderManagerInstance(object):
                     os.makedirs(self.folders[key])
                 except:
                     error()
-                
-            if not self.folders[key] in sys.path:
+
+            if self.folders[key] not in sys.path:
                 sys.path.append(self.folders[key])
-                
-            if not self.folders[key] in os.environ["PATH"].split(os.pathsep):
+
+            if self.folders[key] not in os.environ["PATH"].split(os.pathsep):
                 os.environ["PATH"] += os.pathsep + self.folders[key]
-                
+
             if key == "EXTLIBS":
-            
                 for root, _dirs, _files in os.walk(self.folders[key], topdown=True):
-           
-                    if not root in sys.path:
+                    if root not in sys.path:
                         sys.path.append(root)
-                        
-                    if not root in os.environ["PATH"].split(os.pathsep):
+
+                    if root not in os.environ["PATH"].split(os.pathsep):
                         os.environ["PATH"] += os.pathsep + root
 
     def get_path(self, identifier) -> str | bool:
@@ -419,60 +405,54 @@ class FolderManagerInstance(object):
         """
         if identifier in self.folders:
             if not os.path.exists(self.folders[identifier]):
-                try: 
+                with contextlib.suppress(Exception):
                     os.mkdir(self.folders[identifier])
-                except:
-                    pass
-            
+
             return self.folders[identifier]
-            
-        else:
-            debug("FolderManager: Folder %s unknown" % identifier)
-            return False
-            
-            
-    def set_path(self, identifier, path):
-        
+
+        debug(f"FolderManager: Folder {identifier} unknown")
+        return False
+
+    def set_path(self, identifier, path) -> None:
+
         if identifier in self.folders:
             self.folders[identifier] = path
         else:
-            debug("FolderManager: identifier '%s' unknown to set path" % identifier)
-            
+            debug(f"FolderManager: identifier '{identifier}' unknown to set path")
+
     def get_file(self, identifier):
-    
+
         # print()
         # print("get_file")
         # print (identifier)
         # print (self.files)
-        
+
         if identifier in self.files:
             return self.files[identifier]
-        else:
-            debug("FolderManager: File %s unknown" % identifier)
-            return False
-            
-    def set_file(self, identifier, path):
-                
+        debug(f"FolderManager: File {identifier} unknown")
+        return False
+
+    def set_file(self, identifier, path) -> None:
+
         if identifier in self.files:
             self.files[identifier] = path
         else:
-            debug("FolderManager: identifier '%s' unknown to set file" % identifier)
-            
+            debug(f"FolderManager: identifier '{identifier}' unknown to set file")
+
         # print()
         # print("set_file")
         # print (identifier)
         # print (self.files)
-    
-    
+
     def get_main_dir(self):
         if self.main_is_frozen():
             return os.path.dirname(sys.executable)
-            
+
         return os.getcwd()
 
     def main_is_frozen(self):
         return self.is_main_frozen()
-        
+
     def is_main_frozen(self):
         return hasattr(sys, "frozen")
 
@@ -483,13 +463,14 @@ class FolderManager(FolderManagerInstance):
     # If multiple instances of the same application are running, all but the first instance should get a unique
     # instance_id that is added to certain paths like the measurement folder or the debug.log file to avoid write
     # conflits
-    _process_instance_id: Optional[str] = None
-    _instance: Optional[FolderManager] = None
+    _process_instance_id: str | None = None
+    _instance: FolderManager | None = None
 
-    def __init__(self, create=False):
+    def __init__(self, create=False) -> None:
         super().__init__(create, instance_id=self._process_instance_id)
 
     def __new__(cls, *args, **kwargs):
+        del args, kwargs
         # this ensures that the FolderManager can be called multiple times without creating a new instance
         if not isinstance(cls._instance, cls):
             cls._instance = super().__new__(cls)
@@ -501,17 +482,20 @@ class FolderManager(FolderManagerInstance):
         return cls._instance is not None
 
     @classmethod
-    def set_instance_id(cls, instance_id: str):
+    def set_instance_id(cls, instance_id: str) -> None:
         if not instance_id:
-            raise Exception("An instance id must be provided")
+            msg = "An instance id must be provided"
+            raise Exception(msg)
         if cls._process_instance_id is not None:
-            raise Exception("The instance id has already been set and cannot be overwritten")
+            msg = "The instance id has already been set and cannot be overwritten"
+            raise Exception(msg)
         if cls.has_instance():
-            raise Exception("The instance_id cannot be set after the FolderManager has already been initialized")
+            msg = "The instance_id cannot be set after the FolderManager has already been initialized"
+            raise Exception(msg)
         cls._process_instance_id = instance_id
 
     @classmethod
-    def get_instance_id(cls) -> Optional[str]:
+    def get_instance_id(cls) -> str | None:
         return cls._process_instance_id
 
 

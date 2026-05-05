@@ -23,9 +23,12 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from typing import TYPE_CHECKING
 
 from .FolderManager import getFoMa
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class UIHandler:
@@ -157,7 +160,7 @@ message_info = UIHandler.message_info
 message_balloon = UIHandler.message_balloon
 
 
-def message_log(msg, logfilepath=None):
+def message_log(msg, logfilepath=None) -> None:
     if not logfilepath:
         logfilepath = getFoMa().get_file("LOGBOOK")
 

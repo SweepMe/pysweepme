@@ -25,10 +25,13 @@ from __future__ import annotations
 import os
 from configparser import ConfigParser
 from pathlib import Path
-from typing import Callable, cast
+from typing import TYPE_CHECKING, cast
 
 from .ErrorMessage import error
 from .pysweepme_types import FileIOProtocol
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class DefaultFileIO:
@@ -107,17 +110,17 @@ class Config(ConfigParser):
         """
         super().__init__()
 
-        self.optionxform = str  # type: ignore
+        self.optionxform = str  # type: ignore[method-assign, assignment]
 
         self.file_name = file_name
 
         self.reader_writer = custom_reader_writer(file_name)
 
-    def setFileName(self, file_name):
+    def setFileName(self, file_name) -> None:
         """Deprecated."""
         self.set_filename(file_name)
 
-    def set_filename(self, file_name):
+    def set_filename(self, file_name) -> None:
         self.file_name = file_name
 
     def isConfigFile(self):
@@ -149,7 +152,7 @@ class Config(ConfigParser):
                 self.read_string(self.file_name)
             else:
                 msg = f"The config file {self.file_name!s} does not exist and thus cannot be read."
-                ValueError(msg)
+                raise ValueError(msg)
         except:
             error()
             return False
@@ -160,7 +163,7 @@ class Config(ConfigParser):
         """Deprecated."""
         return self.create_file()
 
-    def create_file(self):
+    def create_file(self) -> bool:
         try:
             if not self.is_file():
                 if not os.path.exists(os.path.dirname(self.file_name)):
@@ -227,8 +230,7 @@ class Config(ConfigParser):
     def get_sections(self):
         if self.load_file():
             return self.sections()
-        else:
-            return []
+        return []
 
     def getConfigOption(self, section, option):
         """Deprecated."""
@@ -238,7 +240,7 @@ class Config(ConfigParser):
         if self.load_file() and section in self:
             if option.lower() in self[section]:
                 return self[section][option.lower()]
-            elif option in self[section]:
+            if option in self[section]:
                 return self[section][option]
         return False
 
