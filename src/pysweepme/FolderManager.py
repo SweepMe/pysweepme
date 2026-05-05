@@ -251,7 +251,7 @@ class FolderManagerInstance:
                         + os.sep
                         + "SweepMe!"
                         + os.sep
-                        + "temp{self._instance_suffix}"
+                        + f"temp{self._instance_suffix}"
                     )
 
             elif sys.platform.startswith("linux"):
