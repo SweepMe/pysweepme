@@ -4,7 +4,6 @@ import importlib.util
 import inspect
 import re
 import sys
-import types
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +11,7 @@ from . import __version__
 from .ErrorMessage import debug
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Callable
 
 
