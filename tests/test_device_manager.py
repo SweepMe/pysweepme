@@ -49,7 +49,7 @@ class TestDeviceManager:
             Device = CustomDevice
 
         with (
-            patch("DeviceManager._load_source") as mocked_load_soure,
+            patch("DeviceManager.load_source") as mocked_load_soure,
             patch(
                 "DeviceManager.get_main_py_path",
             ) as mocked_get_main_py_path,

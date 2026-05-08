@@ -1,6 +1,9 @@
 import functools
+import importlib.machinery
+import importlib.util
 import inspect
 import re
+import sys
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any
 
@@ -8,7 +11,39 @@ from . import __version__
 from .ErrorMessage import debug
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Callable
+
+
+def load_source(modname: str, filename: str) -> types.ModuleType:
+    """Load a Python source file as a module.
+
+    Replacement for the removed `imp.load_source`. Used in pysweepme,
+    SweepMe! and several instrument drivers to dynamically load driver /
+    helper modules from a known on-disk path. The loaded module is
+    registered in ``sys.modules`` so subsequent absolute imports of the
+    same name resolve to it.
+
+    Args:
+        modname: The name to register the module under in ``sys.modules``.
+        filename: Absolute path to the .py file to load.
+
+    Returns:
+        The loaded module object.
+
+    Raises:
+        ImportError: If the import spec for the given file cannot be
+            built.
+    """
+    loader = importlib.machinery.SourceFileLoader(modname, filename)
+    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+    if not spec:
+        msg = f"Failed to import from {filename}"
+        raise ImportError(msg)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module.__name__] = module
+    loader.exec_module(module)
+    return module
 
 
 def _get_pysweepme_version_tuple(version: str) -> tuple[int, ...]:
