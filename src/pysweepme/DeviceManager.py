@@ -21,12 +21,11 @@
 # SOFTWARE.
 
 
-import importlib.util
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from ._utils import load_source
 from .Architecture import version_info
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
@@ -37,19 +36,6 @@ if TYPE_CHECKING:
     import types
 
     from .EmptyDeviceClass import EmptyDevice
-
-
-def _load_source(modname: str, filename: str) -> types.ModuleType:
-    """Load a python module from a source file."""
-    loader = importlib.machinery.SourceFileLoader(modname, filename)
-    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
-    if not spec:
-        msg = f"Failed to import from {filename}"
-        raise ImportError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module.__name__] = module
-    loader.exec_module(module)
-    return module
 
 
 def get_main_py_path(path: str) -> str:
@@ -86,7 +72,7 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
 
     try:
         # Loads .py file as module
-        module = _load_source(name, get_main_py_path(folder + os.sep + name))
+        module = load_source(name, get_main_py_path(folder + os.sep + name))
     except Exception as e:
         # We don't know what could go wrong, so we catch all exceptions, log the error, and raise an Exception again
         error()

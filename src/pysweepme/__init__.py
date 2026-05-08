@@ -30,6 +30,7 @@ from . import Config, DeviceManager, EmptyDeviceClass, ErrorMessage, FolderManag
 if sys.platform == "win32":
     from . import WinFolder
 
+from ._utils import load_source
 from .DeviceManager import get_driver
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import debug, error
@@ -62,5 +63,6 @@ __all__ = [
     "get_driver",
     "get_path",
     "get_port",
+    "load_source",
     "set_path",
 ]
