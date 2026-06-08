@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python 3.14
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: |
@@ -30,4 +30,4 @@ jobs:
           pip install tox~=4.53.1
       - name: Run tox
         run: |
-          tox --parallel --parallel-no-spinner
+          tox run-parallel --parallel-no-spinner
