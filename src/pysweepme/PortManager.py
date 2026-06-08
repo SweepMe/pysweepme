@@ -326,7 +326,9 @@ class PortManager:
         for resource in self._ports:
             try:
                 self.close_port(resource)
-            except:
+            # even in case of an exception for a certain port, we still need to continue with the other ports
+            # For Python 3.11 this issue is solved with python's zero-cost exception handling anyways.
+            except:  # noqa: PERF203
                 error()
 
     @staticmethod

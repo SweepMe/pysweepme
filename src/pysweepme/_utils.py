@@ -4,15 +4,13 @@ import importlib.util
 import inspect
 import re
 import sys
+import types
+from collections.abc import Callable
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from . import __version__
 from .ErrorMessage import debug
-
-if TYPE_CHECKING:
-    import types
-    from collections.abc import Callable
 
 
 def load_source(modname: str, filename: str) -> types.ModuleType:
@@ -82,7 +80,7 @@ def deprecated(
                     code = (frame.code_context or [""])[0].strip()
                     line = frame.lineno
                     blame = f" ['{code.strip()}' in '{file}', line {line}]"
-                except TypeError, OSError:
+                except (TypeError, OSError):
                     blame = ""
                 return blame
 
