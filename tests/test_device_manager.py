@@ -1,14 +1,11 @@
 """Test pysweepme DeviceManager functions."""
 
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pysweepme.DeviceManager import get_driver, get_driver_instance, get_main_py_path
 from pysweepme.EmptyDeviceClass import EmptyDevice
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 BITNESS_DISCRIMINATOR = 0x100000000
 

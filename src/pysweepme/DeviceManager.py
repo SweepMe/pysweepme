@@ -22,20 +22,17 @@
 
 
 import os
+import types
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from ._utils import load_source
 from .Architecture import version_info
+from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
 from .PortManager import PortManager
 from .Ports import Port, PortProperties
-
-if TYPE_CHECKING:
-    import types
-
-    from .EmptyDeviceClass import EmptyDevice
 
 
 def get_main_py_path(path: str) -> str:
