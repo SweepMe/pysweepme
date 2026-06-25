@@ -196,7 +196,7 @@ def get_port(ID: str, properties: PortProperties | None = None) -> Port | bool:
             error(f"Ports: Cannot create ASRL port object for {ID}")
             return False
 
-    elif ID.startswith("TCPIP"):
+    elif ID.startswith("TCPIP") and not ID.endswith("::SOCKET"):
         try:
             port = TCPIPport(ID)
         except:
@@ -210,8 +210,9 @@ def get_port(ID: str, properties: PortProperties | None = None) -> Port | bool:
             error(f"Ports: Cannot create COM port object for {ID}")
             return False
 
-    elif ID.startswith("SOCKET") or is_IP(ID)[0]:
-        # actually, the ID must not start with SOCKET, it only works for IPv4 addresses
+    elif ID.startswith("SOCKET") or ID.endswith("::SOCKET") or is_IP(ID)[0]:
+        # A VISA socket resource (e.g. "TCPIP0::host::1225::SOCKET") and bare IPv4
+        # addresses are handled as raw sockets, not via the VISA TCPIP port.
         try:
             port = SOCKETport(ID)
         except Exception:
@@ -1072,6 +1073,11 @@ class SOCKETport(Port):
     def get_host_port(self) -> tuple[str, int]:
         """Extract the host and port of the port string. Use the fixed port if specified."""
         port_id = self.port_properties["ID"]
+
+        # VISA socket resource string, e.g. "TCPIP0::192.168.0.1::1225::SOCKET"
+        if port_id.endswith("::SOCKET"):
+            parts = port_id.split("::")
+            return parts[-3], int(parts[-2])
 
         port: str | int = ""
         ok, host, port = is_IP(port_id)
