@@ -211,7 +211,7 @@ def get_port(ID: str, properties: PortProperties | None = None) -> Port | bool:
             return False
 
     elif ID.startswith("SOCKET") or is_IP(ID)[0]:
-        # actually, the ID must not start with SOCKET, it only works for IPv4 addresses
+        # currently this works only if the ID is a valid IP address with port, otherwise it will fail
         try:
             port = SOCKETport(ID)
         except Exception:
@@ -968,7 +968,7 @@ class USBTMCport(Port):
 
 
 class TCPIPport(Port):
-    port: pyvisa.resources.TCPIPInstrument
+    port: pyvisa.resources.TCPIPInstrument | pyvisa.resources.TCPIPSocket
 
     def __init__(self, ID: str) -> None:
         """Initialize the TCPIP port."""
@@ -982,8 +982,8 @@ class TCPIPport(Port):
 
         tcpip_address = self.get_ip_address()
         port = _rm.open_resource(tcpip_address)
-        if not isinstance(port, pyvisa.resources.TCPIPInstrument):
-            msg = "TCPIP port resource is not a TCPIPInstrument."
+        if not isinstance(port, (pyvisa.resources.TCPIPInstrument, pyvisa.resources.TCPIPSocket)):
+            msg = f"TCPIP port resource {tcpip_address} is not a TCPIPInstrument or TCPIPSocket."
             raise TypeError(msg)
 
         self.port = port
