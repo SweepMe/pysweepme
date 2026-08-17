@@ -285,6 +285,105 @@ class PortManager:
         self.close_resourcemanager()
         return identification
 
+    @staticmethod
+    def get_fingerprint(resource: str, port_type: str) -> dict[str, str | None]:
+        """Extract OS-level metadata for ``resource`` without opening the port.
+
+        Thin wrapper over :py:func:`pysweepme.Ports.get_port_metadata` so the
+        identity layer in SweepMe! can stay on the ``PortManager`` API surface
+        rather than reaching into ``Ports`` directly.
+
+        Returns a dict with keys ``vid``, ``pid``, ``serial_number``,
+        ``description``, ``manufacturer`` — each either a string or ``None``.
+        Currently populates data for ``COM`` (via pyserial's ``list_ports``)
+        and ``USBTMC``/``USB`` (by parsing the VISA resource string); other
+        port types return all-``None``.
+        """
+        return Ports.get_port_metadata(resource, port_type)
+
+    def try_identify(
+        self,
+        resource: str,
+        port_type: str,
+        properties: PortProperties | None = None,
+        timeout_s: float = 1.0,
+    ) -> str | None:
+        """Open ``resource``, send ``*IDN?``, close, return the response (or ``None``).
+
+        Used by the SweepMe! identification flow to fingerprint a port via its
+        SCPI identity string. Best-effort:
+
+        * Skips ports that are currently open by another driver (returns
+          ``None``) — never disturbs in-use hardware.
+        * Uses a short ``timeout_s`` (default 1 s) so unresponsive ports fail
+          fast.
+        * For COM ports the default ``\\n`` terminator is tried first; if that
+          yields no answer, ``\\r\\n`` is tried as a fallback.
+        * Any exception is swallowed and ``None`` returned. The caller can
+          fall back to OS-level metadata (see :py:meth:`get_fingerprint`).
+
+        ``properties`` is merged into the request the same way
+        :py:meth:`get_port` merges driver and dialog properties, so callers
+        can pass e.g. ``{"baudrate": 115200}`` to honour a user-selected
+        COM baudrate.
+
+        Args:
+            resource: Resource string, e.g. ``"COM5"`` or ``"GPIB0::24::INSTR"``.
+            port_type: Registered port-type string (``"COM"``, ``"GPIB"``, ...).
+            properties: Optional ``PortProperties`` overrides. ``timeout`` will be
+                clamped to ``timeout_s`` so identification never blocks the GUI.
+            timeout_s: Maximum read timeout in seconds. Defaults to 1.
+
+        Returns:
+            The trimmed ``*IDN?`` response, or ``None`` on any failure.
+        """
+        # Don't disturb in-use ports; the caller asks "Identify all" knowing
+        # in-use ports will be skipped (see plan B in PortManager-upgrade doc).
+        if (
+            resource in self._ports
+            and self._ports[resource].port_properties.get("open") is True
+        ):
+            return None
+
+        # Build properties with our timeout override, but keep caller props on top.
+        props: PortProperties = dict(properties) if properties else {}
+        props["timeout"] = timeout_s
+
+        try:
+            port = self.get_port(resource, props)
+        except Exception:  # noqa: BLE001 — get_port already swallows + logs, defence-in-depth.
+            return None
+
+        if not isinstance(port, Port):
+            return None
+
+        try:
+            # Attempt 1: send *IDN? with the port-type's default EOL.
+            try:
+                response = port.query("*IDN?")
+                if response and response.strip():
+                    return response.strip()
+            except Exception:  # noqa: BLE001 — bad terminator / no response / encoding mismatch.
+                pass
+
+            # Attempt 2 (COM only): try \r\n in case the device uses CRLF terminators.
+            if port_type == "COM":
+                try:
+                    port.port_properties["EOLwrite"] = "\r\n"
+                    port.port_properties["EOLread"] = "\r\n"
+                    response = port.query("*IDN?")
+                    if response and response.strip():
+                        return response.strip()
+                except Exception:  # noqa: BLE001
+                    pass
+
+            return None
+        finally:
+            try:
+                self.close_port(resource)
+            except Exception:  # noqa: BLE001 — best-effort cleanup.
+                pass
+
     def open_port(self, resource: str) -> None:
         """Opens port by resource name.
 
