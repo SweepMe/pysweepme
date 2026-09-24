@@ -22,12 +22,13 @@
 
 from __future__ import annotations
 
+import configparser
 import os
 from configparser import ConfigParser
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from .ErrorMessage import error
+from .ErrorMessage import debug, error
 from .pysweepme_types import FileIOProtocol
 
 if TYPE_CHECKING:
@@ -139,13 +140,39 @@ class Config(ConfigParser):
         """Deprecated."""
         return self.load_file()
 
+    def _backup_and_recreate_configfile(self) -> None:
+        ini_path = Path(self.file_name)
+        backup_path = ini_path.with_suffix(f"{ini_path.suffix}.bak")
+
+        counter = 1
+        while backup_path.exists():
+            backup_path = ini_path.with_suffix(
+                f"{ini_path.suffix}.{counter}.bak",
+            )
+            counter += 1
+
+        ini_path.rename(backup_path)
+        self.create_file()
+        debug(f"Discarding unreadable config file `{ini_path!s}` - Backed up as `{backup_path!s}`.")
+
+    def _load_and_parse_file(self) -> None:
+        with self.reader_writer.open("r", encoding="utf-8") as cf:
+            self.read_file(cf)
+            if hasattr(self.reader_writer, "set_full_read"):
+                self.reader_writer.set_full_read()
+
     def load_file(self) -> bool:
         try:
             if self.is_file():
-                with self.reader_writer.open("r", encoding="utf-8") as cf:
-                    self.read_file(cf)
-                    if hasattr(self.reader_writer, "set_full_read"):
-                        self.reader_writer.set_full_read()
+                try:
+                    self._load_and_parse_file()
+                except configparser.MissingSectionHeaderError:
+                    # the configfile is broken and cannot be read
+                    # we create a backup and start with a fresh configfile
+                    self._backup_and_recreate_configfile()
+                    # now try again
+                    self._load_and_parse_file()
+
             elif isinstance(self.file_name, str):
                 # apparently the Config instance is not a valid, existing file, so we try to read it as the content
                 # of an ini file
