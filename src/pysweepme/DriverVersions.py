@@ -34,6 +34,8 @@ import configparser
 import re
 import sqlite3
 import sys
+import time
+from contextlib import closing
 from pathlib import Path
 
 from .ErrorMessage import debug
@@ -49,6 +51,10 @@ DEVELOPMENT = "development"
 SETTING = "setting"
 
 _VERSIONS_FILE_PATTERN = re.compile(r"^Version(\d+)\.(\d+)\.(\d+)(dev)?\.ini$")
+
+# The versions file is read again if it is incomplete, as the Version Manager might be writing it at the same time
+_READ_ATTEMPTS = 3
+_READ_RETRY_DELAY_S = 0.05
 
 
 class DriverVersionError(LookupError):
@@ -71,7 +77,7 @@ def get_versions_file(version: str | None = None) -> Path:
         version: The pysweepme version, e.g. '1.6.1.3'. Defaults to the version of the installed pysweepme.
 
     Returns:
-        The path of the versions file. The file itself might be missing if only its backup file exists.
+        The path of the versions file.
 
     Raises:
         DriverVersionError: If there is no versions file for the major and minor version.
@@ -88,14 +94,12 @@ def get_versions_file(version: str | None = None) -> Path:
     candidates: dict[int, Path] = {}
     if versions_folder.is_dir():
         for file in versions_folder.iterdir():
-            # a versions file whose backup is the only remaining copy is still a candidate
-            file_name = file.name.removesuffix(".bak")
-            match = _VERSIONS_FILE_PATTERN.match(file_name)
+            match = _VERSIONS_FILE_PATTERN.match(file.name)
             if not match:
                 continue
             if (int(match.group(1)), int(match.group(2))) != (major, minor) or bool(match.group(4)) != dev:
                 continue
-            candidates[int(match.group(3))] = versions_folder / file_name
+            candidates[int(match.group(3))] = file
 
     if not candidates:
         suffix = "dev" if dev else ""
@@ -108,25 +112,40 @@ def get_versions_file(version: str | None = None) -> Path:
     return candidates.get(patch, candidates[max(candidates)])
 
 
-def _read_versions_file(versions_file: Path) -> configparser.ConfigParser:
-    """Read the versions file and fall back to its backup file like the Version Manager does.
+def _read_versions_file(versions_file: Path) -> configparser.ConfigParser | None:
+    """Read the versions file once.
 
-    The file is never written, as it is owned by the Version Manager.
+    Not thread-safe: The Version Manager writes the versions file from the main GUI thread by truncating and
+    rewriting it, while this function is typically called from the measurement thread, e.g. by get_driver() in the
+    connect() of a CustomFunction script. A read during such a write returns an empty or incomplete file.
+
+    The file is only read and never repaired, as it is owned by the Version Manager. The backup file is not used.
+
+    Args:
+        versions_file: The versions file of the Version Manager.
+
+    Returns:
+        The parsed versions file, or None if the file cannot be read, cannot be parsed, or has no driver section.
     """
-    for file in (versions_file, versions_file.with_name(versions_file.name + ".bak")):
-        if not file.is_file():
-            continue
-        config = configparser.ConfigParser(interpolation=None, strict=False)
-        config.optionxform = str  # type: ignore[assignment, method-assign]  # driver names are case-sensitive
-        try:
-            config.read(file, encoding="utf-8")
-        except configparser.Error:
-            debug(f"DriverVersions: Cannot read versions file '{file}'.")
-            continue
-        return config
+    try:
+        # read the content at once to keep the time window small in which the file can change
+        content = versions_file.read_text(encoding="utf-8")
+    except OSError:
+        debug(f"DriverVersions: Cannot read versions file '{versions_file}'.")
+        return None
 
-    msg = f"Cannot read versions file '{versions_file}' or its backup file."
-    raise DriverVersionError(msg)
+    config = configparser.ConfigParser(interpolation=None, strict=False)
+    config.optionxform = str  # type: ignore[assignment, method-assign]  # driver names are case-sensitive
+    try:
+        config.read_string(content, source=str(versions_file))
+    except configparser.Error:
+        debug(f"DriverVersions: Cannot parse versions file '{versions_file}'.")
+        return None
+
+    if not config.has_section(DRIVER_SECTION):
+        return None
+
+    return config
 
 
 def get_driver_version_entry(name: str, versions_file: Path) -> str:
@@ -134,6 +153,10 @@ def get_driver_version_entry(name: str, versions_file: Path) -> str:
 
     The entry is either the key of a source like 'custom' or 'repo', the file id of an installed version, or 'None'
     if the driver is deactivated.
+
+    Not thread-safe: The Version Manager might write the versions file from the main GUI thread while this function
+    is called from the measurement thread. Therefore, the file is read again a few times if it is unreadable or
+    does not list the driver. An entry that is cut off during writing cannot be detected.
 
     Args:
         name: The name of the driver.
@@ -143,22 +166,32 @@ def get_driver_version_entry(name: str, versions_file: Path) -> str:
         The entry of the driver.
 
     Raises:
-        DriverVersionError: If the driver is not listed in the versions file.
+        DriverVersionError: If the versions file cannot be read or the driver is not listed in the versions file.
     """
-    config = _read_versions_file(versions_file)
+    config = None
+    for attempt in range(_READ_ATTEMPTS):
+        if attempt > 0:
+            time.sleep(_READ_RETRY_DELAY_S)
+        config = _read_versions_file(versions_file)
+        # The Version Manager lists each driver by its id and by its name. pysweepme only knows the name.
+        if config is not None and config.has_option(DRIVER_SECTION, name):
+            return config.get(DRIVER_SECTION, name).strip()
 
-    # The Version Manager lists each driver by its id and by its name. pysweepme only knows the name.
-    if not config.has_option(DRIVER_SECTION, name):
-        # TODO: If a driver is not listed yet, the Version Manager selects a default version in the order custom,
-        #  pre-installed, other sources, installed version with the highest file id. This order needs to be added
-        #  here, which will be solved automatically when parts of the Version Manager are moved to pysweepme.
+    if config is None:
         msg = (
-            f"Driver '{name}' is not listed in versions file '{versions_file}'. "
-            "Open the Version Manager in SweepMe! once or pass the folder of the driver."
+            f"Cannot read versions file '{versions_file}'. "
+            "Open the Version Manager in SweepMe! to recreate it or pass the folder of the driver."
         )
         raise DriverVersionError(msg)
 
-    return config.get(DRIVER_SECTION, name).strip()
+    # TODO: If a driver is not listed yet, the Version Manager selects a default version in the order custom,
+    #  pre-installed, other sources, installed version with the highest file id. This order needs to be added
+    #  here, which will be solved automatically when parts of the Version Manager are moved to pysweepme.
+    msg = (
+        f"Driver '{name}' is not listed in versions file '{versions_file}'. "
+        "Open the Version Manager in SweepMe! once or pass the folder of the driver."
+    )
+    raise DriverVersionError(msg)
 
 
 def _get_installed_folder(name: str, file_id: str) -> Path:
@@ -178,12 +211,14 @@ def _get_persistent_source_folder(key: str) -> Path:
     """Get the folder of a driver source that is defined in SweepMe!, e.g. 'repo'.
 
     These sources are added in SweepMe! and stored in the table 'source_directories' of the database CONFIG/info.dat.
+    SQLite handles concurrent access from other threads and processes itself. If SweepMe! is writing the database,
+    the read waits up to the default timeout of 5 s.
     """
     database = Path(str(get_path("CONFIG"))) / "info.dat"
     if database.is_file():
         try:
             # open read-only as the database is owned by SweepMe!
-            with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+            with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
                 row = connection.execute(
                     "SELECT path FROM source_directories WHERE object_type = ? AND scope = ? AND key = ?",
                     ("driver", "persistent", key),
@@ -200,6 +235,10 @@ def _get_persistent_source_folder(key: str) -> Path:
 
 def get_driver_folder(name: str) -> str:
     """Get the folder that contains the driver version that is selected in the Version Manager of SweepMe!.
+
+    Not thread-safe: The versions file is read without synchronization with the Version Manager, which might write
+    it from the main GUI thread while this function is called from the measurement thread, see
+    get_driver_version_entry().
 
     Args:
         name: The name of the driver.

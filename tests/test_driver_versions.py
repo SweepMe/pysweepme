@@ -88,14 +88,12 @@ class TestGetVersionsFile:
         with pytest.raises(DriverVersionError):
             get_versions_file("1.6.1.3")
 
-    def test_backup_only(self, folders: dict[str, Path], frozen: bool) -> None:  # noqa: FBT001
-        """A versions file of which only the backup exists is found and read from the backup."""
+    def test_backup_ignored(self, folders: dict[str, Path], frozen: bool) -> None:  # noqa: FBT001
+        """Backup files of the Version Manager are not used."""
         file = write_versions_file(folders["VERSIONS"], "1.6.1", frozen, {DRIVER: "custom"})
         file.rename(file.with_name(file.name + ".bak"))
-        create_driver(folders["CUSTOMDEVICES"])
-        assert get_versions_file("1.6.1.3") == file
-        with patch.object(DriverVersions, "get_versions_file", return_value=file):
-            assert get_driver_folder(DRIVER) == str(folders["CUSTOMDEVICES"])
+        with pytest.raises(DriverVersionError):
+            get_versions_file("1.6.1.3")
 
 
 class TestGetDriverFolder:
@@ -179,3 +177,46 @@ def test_get_driver_class_without_folder(folders: dict[str, Path]) -> None:
     with patch.object(DriverVersions, "get_versions_file", return_value=file):
         driver_class = get_driver_class(None, DRIVER)
     assert driver_class.__module__ == DRIVER
+
+
+class TestConcurrentWrite:
+    """Test reading the versions file while the Version Manager might write it."""
+
+    @staticmethod
+    def resolve_while_writing(folders: dict[str, Path], contents: list[str]) -> str:
+        """Resolve the driver folder while the versions file changes its content with each read attempt."""
+        file = folders["VERSIONS"] / "Version1.6.1.ini"
+        file.write_text(contents[0], encoding="utf-8")
+        remaining = iter(contents[1:])
+
+        def sleep(_seconds: float) -> None:
+            file.write_text(next(remaining, contents[-1]), encoding="utf-8")
+
+        with (
+            patch.object(DriverVersions, "get_versions_file", return_value=file),
+            patch("pysweepme.DriverVersions.time.sleep", new=sleep),
+        ):
+            return get_driver_folder(DRIVER)
+
+    @pytest.mark.parametrize(
+        "incomplete",
+        ["", "[MC]\n1 = pre-installed\n", "[DC]\n42 = custom\n", "[DC]\n42 = custom\nLogger-MyComp"],
+        ids=["empty", "no_driver_section", "driver_not_yet_written", "line_cut_off"],
+    )
+    def test_incomplete_file_read_again(self, folders: dict[str, Path], incomplete: str) -> None:
+        """An incomplete versions file is read again until it lists the driver."""
+        create_driver(folders["CUSTOMDEVICES"])
+        complete = f"[DC]\n42 = custom\n{DRIVER} = custom\n"
+        assert self.resolve_while_writing(folders, [incomplete, complete]) == str(folders["CUSTOMDEVICES"])
+
+    def test_unreadable_file(self, folders: dict[str, Path]) -> None:
+        """An error is raised if the versions file stays unreadable, the backup file is not used."""
+        file = write_versions_file(folders["VERSIONS"], "1.6.1", True, {DRIVER: "custom"})  # noqa: FBT003
+        file.rename(file.with_name(file.name + ".bak"))
+        with pytest.raises(DriverVersionError, match="Cannot read"):
+            self.resolve_while_writing(folders, [""])
+
+    def test_not_listed_after_retries(self, folders: dict[str, Path]) -> None:
+        """An error is raised if the driver is still not listed after reading the file again."""
+        with pytest.raises(DriverVersionError, match="not listed"):
+            self.resolve_while_writing(folders, ["[DC]\n42 = custom\n"])
