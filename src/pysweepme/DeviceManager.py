@@ -28,6 +28,7 @@ from typing import cast
 
 from ._utils import load_source
 from .Architecture import version_info
+from .DriverVersions import get_driver_folder
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
@@ -53,19 +54,22 @@ def get_main_py_path(path: str) -> str:
     return path + os.sep + "main.py"
 
 
-def get_driver_module(folder: str, name: str) -> types.ModuleType:
+def get_driver_module(folder: str | None, name: str) -> types.ModuleType:
     """Load the module containing the requested driver.
 
     Args:
-        folder: The folder containing the drivers.
+        folder: The folder containing the drivers. If None, the folder of the driver version selected in the
+            SweepMe! Version Manager is used.
         name: The name of the driver
 
     Returns:
         The loaded module containing the requested driver.
     """
-    if folder == "":
-        folder = "."
     name = name.strip(r"\/")
+    if folder is None:
+        folder = get_driver_folder(name)
+    elif folder == "":
+        folder = "."
 
     try:
         # Loads .py file as module
@@ -81,16 +85,20 @@ def get_driver_module(folder: str, name: str) -> types.ModuleType:
     return module
 
 
-def get_driver_class(folder: str, name: str) -> type[EmptyDevice]:
+def get_driver_class(folder: str | None, name: str) -> type[EmptyDevice]:
     """Get the class (not an instance) of the requested driver.
 
     Args:
-        folder: The folder containing the drivers.
+        folder: The folder containing the drivers. If None, the folder of the driver version selected in the
+            SweepMe! Version Manager is used.
         name: The name of the driver
 
     Returns:
         The class of the requested driver.
     """
+    if folder is None:
+        folder = get_driver_folder(name)
+
     # Add the libs or library folder to the path before loading the driver
     driver_path = Path(folder) / name
     addFolderToPATH(str(driver_path))
@@ -100,13 +108,14 @@ def get_driver_class(folder: str, name: str) -> type[EmptyDevice]:
     return driver
 
 
-def get_driver_instance(folder: str, name: str) -> EmptyDevice:
+def get_driver_instance(folder: str | None, name: str) -> EmptyDevice:
     """Create a bare driver instance.
 
     Create a bare driver instance without input cleanup and without setting GUI parameters.
 
     Args:
-        folder: General folder in which to look for drivers.
+        folder: General folder in which to look for drivers. If None, the folder of the driver version selected in
+            the SweepMe! Version Manager is used.
         name: Name of the driver being the name of the driver folder.
 
     Returns:
@@ -140,7 +149,7 @@ def setup_driver(driver: EmptyDevice, name: str, port_string: str) -> None:
         driver.set_parameters({"Device": name})
 
 
-def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevice:
+def get_driver(name: str, folder: str | None = None, port_string: str = "") -> EmptyDevice:
     """Create a driver instance.
 
     When the driver uses the port manager, the port will already be opened, but the connect() function of
@@ -148,8 +157,9 @@ def get_driver(name: str, folder: str = ".", port_string: str = "") -> EmptyDevi
 
     Args:
         name: Name of the driver being the name of the driver folder
-        folder: (optional) General folder to look for drivers, If folder is not used or empty, the driver is loaded
-            from the folder of the running script/project
+        folder: (optional) General folder to look for drivers. If folder is not used, the driver version that is
+            selected in the Version Manager of the SweepMe! version matching this pysweepme version is loaded. If
+            folder is empty, the driver is loaded from the current working directory.
         port_string: (optional) A port resource name as selected in SweepMe! such as 'COM1', 'GPIB0::1::INSTR', etc.
             It is required if the driver connects to an instrument and needs to open a specific port.
 
