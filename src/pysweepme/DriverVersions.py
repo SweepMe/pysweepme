@@ -70,8 +70,11 @@ def get_versions_file(version: str | None = None) -> Path:
 
     Each SweepMe! version has its own versions file. The file is compatible if major and minor version match. The file
     of the same patch version is preferred, otherwise the file with the highest patch version is used, because
-    pysweepme is not released with every SweepMe! patch version. The files of a SweepMe! running from source have the
-    suffix 'dev', which is used whenever the application is not frozen.
+    pysweepme is not released with every SweepMe! patch version.
+
+    The files of a SweepMe! running from source have the suffix 'dev'. A frozen application only uses the release
+    files. Otherwise, the dev files are preferred, and the release files are used if there is no dev file, e.g. for a
+    standalone script that uses pysweepme together with an installed SweepMe!.
 
     Args:
         version: The pysweepme version, e.g. '1.6.1.3'. Defaults to the version of the installed pysweepme.
@@ -88,23 +91,24 @@ def get_versions_file(version: str | None = None) -> Path:
         version = __version__
 
     major, minor, patch = (int(part) for part in version.split(".")[0:3])
-    dev = not _is_frozen()
     versions_folder = Path(str(get_path("VERSIONS")))
 
-    candidates: dict[int, Path] = {}
+    # candidates by patch version, separately for release files and dev files
+    release_files: dict[int, Path] = {}
+    dev_files: dict[int, Path] = {}
     if versions_folder.is_dir():
         for file in versions_folder.iterdir():
             match = _VERSIONS_FILE_PATTERN.match(file.name)
-            if not match:
+            if not match or (int(match.group(1)), int(match.group(2))) != (major, minor):
                 continue
-            if (int(match.group(1)), int(match.group(2))) != (major, minor) or bool(match.group(4)) != dev:
-                continue
-            candidates[int(match.group(3))] = file
+            (dev_files if match.group(4) else release_files)[int(match.group(3))] = file
+
+    candidates = release_files if _is_frozen() or not dev_files else dev_files
 
     if not candidates:
-        suffix = "dev" if dev else ""
+        pattern = f"Version{major}.{minor}.*.ini" if _is_frozen() else f"Version{major}.{minor}.*[dev].ini"
         msg = (
-            f"No versions file 'Version{major}.{minor}.*{suffix}.ini' found in '{versions_folder}'. "
+            f"No versions file '{pattern}' found in '{versions_folder}'. "
             f"Start SweepMe! {major}.{minor} once to create it or pass the folder of the driver."
         )
         raise DriverVersionError(msg)

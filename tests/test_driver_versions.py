@@ -82,11 +82,30 @@ class TestGetVersionsFile:
         with pytest.raises(DriverVersionError):
             get_versions_file("1.6.1.3")
 
-    def test_dev_file_only_from_source(self, folders: dict[str, Path], frozen: bool) -> None:  # noqa: FBT001
-        """A frozen application uses the release file, an application running from source uses the dev file."""
-        write_versions_file(folders["VERSIONS"], "1.6.1", not frozen, {})
+    def test_dev_file_preferred_from_source(self, folders: dict[str, Path], frozen: bool) -> None:  # noqa: FBT001
+        """A frozen application uses the release file, an application running from source prefers the dev file."""
+        write_versions_file(folders["VERSIONS"], "1.6.1", True, {})  # noqa: FBT003
+        write_versions_file(folders["VERSIONS"], "1.6.1", False, {})  # noqa: FBT003
+        expected = "Version1.6.1.ini" if frozen else "Version1.6.1dev.ini"
+        assert get_versions_file("1.6.1.3").name == expected
+
+    def test_frozen_ignores_dev_file(self, folders: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+        """A frozen application never uses a dev file."""
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        write_versions_file(folders["VERSIONS"], "1.6.1", False, {})  # noqa: FBT003
         with pytest.raises(DriverVersionError):
             get_versions_file("1.6.1.3")
+
+    def test_release_file_fallback_from_source(
+        self,
+        folders: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without a dev file, an application running from source uses the release file, e.g. a standalone script."""
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        write_versions_file(folders["VERSIONS"], "1.6.1", True, {})  # noqa: FBT003
+        write_versions_file(folders["VERSIONS"], "1.5.8", False, {})  # noqa: FBT003
+        assert get_versions_file("1.6.1.3").name == "Version1.6.1.ini"
 
     def test_backup_ignored(self, folders: dict[str, Path], frozen: bool) -> None:  # noqa: FBT001
         """Backup files of the Version Manager are not used."""
