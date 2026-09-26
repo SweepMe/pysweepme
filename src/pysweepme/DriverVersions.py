@@ -134,7 +134,8 @@ def _read_versions_file(versions_file: Path) -> configparser.ConfigParser | None
     try:
         # read the content at once to keep the time window small in which the file can change
         content = versions_file.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # a read during writing can end within a multibyte character
         debug(f"DriverVersions: Cannot read versions file '{versions_file}'.")
         return None
 

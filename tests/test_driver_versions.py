@@ -202,14 +202,18 @@ class TestConcurrentWrite:
     """Test reading the versions file while the Version Manager might write it."""
 
     @staticmethod
-    def resolve_while_writing(folders: dict[str, Path], contents: list[str]) -> str:
+    def resolve_while_writing(folders: dict[str, Path], contents: list[str | bytes]) -> str:
         """Resolve the driver folder while the versions file changes its content with each read attempt."""
         file = folders["VERSIONS"] / "Version1.6.1.ini"
-        file.write_text(contents[0], encoding="utf-8")
+
+        def write(content: str | bytes) -> None:
+            file.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+
+        write(contents[0])
         remaining = iter(contents[1:])
 
         def sleep(_seconds: float) -> None:
-            file.write_text(next(remaining, contents[-1]), encoding="utf-8")
+            write(next(remaining, contents[-1]))
 
         with (
             patch.object(DriverVersions, "get_versions_file", return_value=file),
@@ -219,10 +223,16 @@ class TestConcurrentWrite:
 
     @pytest.mark.parametrize(
         "incomplete",
-        ["", "[MC]\n1 = pre-installed\n", "[DC]\n42 = custom\n", "[DC]\n42 = custom\nLogger-MyComp"],
-        ids=["empty", "no_driver_section", "driver_not_yet_written", "line_cut_off"],
+        [
+            "",
+            "[MC]\n1 = pre-installed\n",
+            "[DC]\n42 = custom\n",
+            "[DC]\n42 = custom\nLogger-MyComp",
+            "[DC]\n42 = custom\nLogger-Kühler".encode()[:-5],  # cut off within the two bytes of 'ü'
+        ],
+        ids=["empty", "no_driver_section", "driver_not_yet_written", "line_cut_off", "multibyte_char_cut_off"],
     )
-    def test_incomplete_file_read_again(self, folders: dict[str, Path], incomplete: str) -> None:
+    def test_incomplete_file_read_again(self, folders: dict[str, Path], incomplete: str | bytes) -> None:
         """An incomplete versions file is read again until it lists the driver."""
         create_driver(folders["CUSTOMDEVICES"])
         complete = f"[DC]\n42 = custom\n{DRIVER} = custom\n"
