@@ -189,9 +189,10 @@ def get_driver_version_entry(name: str, versions_file: Path) -> str:
         )
         raise DriverVersionError(msg)
 
-    # TODO: If a driver is not listed yet, the Version Manager selects a default version in the order custom,
-    #  pre-installed, other sources, installed version with the highest file id. This order needs to be added
-    #  here, which will be solved automatically when parts of the Version Manager are moved to pysweepme.
+    # TODO @SweepMe!-Team: If a driver is not listed yet, the Version Manager selects a default version in the order
+    #      custom, pre-installed, other sources, installed version with the highest file id. This order needs to be
+    #      added here, which will be solved automatically when parts of the Version Manager are moved to pysweepme.
+    #      https://dev.azure.com/sweepme/SweepMe!/_workitems/edit/169
     msg = (
         f"Driver '{name}' is not listed in versions file '{versions_file}'. "
         "Open the Version Manager in SweepMe! once or pass the folder of the driver."
@@ -202,8 +203,9 @@ def get_driver_version_entry(name: str, versions_file: Path) -> str:
 def _get_installed_folder(name: str, file_id: str) -> Path:
     """Get the folder of an installed driver version, i.e. SHAREDDEVICES/DC_<id>_<file_id>_<name>."""
     shared_devices_folder = Path(str(get_path("SHAREDDEVICES")))
-    # TODO: The Version Manager skips installed versions whose files do not match the hash in info.ini. This
-    #  integrity check is not done here yet.
+    # TODO @SweepMe!-Team: The Version Manager skips installed versions whose files do not match the hash in info.ini.
+    #      This integrity check is not done here yet.
+    #      https://dev.azure.com/sweepme/SweepMe!/_workitems/edit/169
     for folder in sorted(shared_devices_folder.glob(f"DC_*_{file_id}_{name}")):
         if (folder / name).is_dir():
             return folder
