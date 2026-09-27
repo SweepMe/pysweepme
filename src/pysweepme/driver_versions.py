@@ -38,7 +38,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from .ErrorMessage import debug
+from .ErrorMessage import debug, error
 from .FolderManager import get_path
 
 DRIVER_SECTION = "DC"
@@ -136,7 +136,7 @@ def _read_versions_file(versions_file: Path) -> configparser.ConfigParser | None
         content = versions_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         # a read during writing can end within a multibyte character
-        debug(f"DriverVersions: Cannot read versions file '{versions_file}'.")
+        error(f"DriverVersions: Cannot read versions file '{versions_file}'.")
         return None
 
     config = configparser.ConfigParser(interpolation=None, strict=False)
@@ -144,7 +144,7 @@ def _read_versions_file(versions_file: Path) -> configparser.ConfigParser | None
     try:
         config.read_string(content, source=str(versions_file))
     except configparser.Error:
-        debug(f"DriverVersions: Cannot parse versions file '{versions_file}'.")
+        error(f"DriverVersions: Cannot parse versions file '{versions_file}'.")
         return None
 
     if not config.has_section(DRIVER_SECTION):
@@ -231,7 +231,7 @@ def _get_persistent_source_folder(key: str) -> Path:
                     ("driver", "persistent", key),
                 ).fetchone()
         except sqlite3.Error:
-            debug(f"DriverVersions: Cannot read driver sources from '{database}'.")
+            error(f"DriverVersions: Cannot read driver sources from '{database}'.")
             row = None
         if row:
             return Path(row[0]).resolve()
