@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
-from pysweepme import DriverVersions
+from pysweepme import driver_versions
 from pysweepme.DeviceManager import get_driver_class
-from pysweepme.DriverVersions import DriverVersionError, get_driver_folder, get_versions_file
+from pysweepme.driver_versions import DriverVersionError, get_driver_folder, get_versions_file
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -22,7 +22,7 @@ DRIVER = "Logger-MyCompany_MyModel"
 
 @pytest.fixture
 def folders(tmp_path: Path) -> Iterator[dict[str, Path]]:
-    """Redirect all folders used by DriverVersions to a temporary directory."""
+    """Redirect all folders used by driver_versions to a temporary directory."""
     paths = {key: tmp_path / key for key in ("VERSIONS", "SHAREDDEVICES", "CUSTOMDEVICES", "CONFIG")}
     for path in paths.values():
         path.mkdir()
@@ -30,7 +30,7 @@ def folders(tmp_path: Path) -> Iterator[dict[str, Path]]:
     def get_path(identifier: str) -> str:
         return str(paths[identifier])
 
-    with patch.object(DriverVersions, "get_path", new=get_path):
+    with patch.object(driver_versions, "get_path", new=get_path):
         yield paths
 
 
@@ -123,7 +123,7 @@ class TestGetDriverFolder:
         """Write a versions file with the given entry for the driver and resolve the driver folder."""
         drivers = {} if entry is None else {"42": entry, DRIVER: entry}
         file = write_versions_file(folders["VERSIONS"], "1.6.1", True, drivers)  # noqa: FBT003
-        with patch.object(DriverVersions, "get_versions_file", return_value=file):
+        with patch.object(driver_versions, "get_versions_file", return_value=file):
             return get_driver_folder(DRIVER)
 
     def test_custom(self, folders: dict[str, Path]) -> None:
@@ -193,7 +193,7 @@ def test_get_driver_class_without_folder(folders: dict[str, Path]) -> None:
     """Without a folder, the driver is loaded from the folder given by the versions file."""
     create_driver(folders["CUSTOMDEVICES"])
     file = write_versions_file(folders["VERSIONS"], "1.6.1", True, {DRIVER: "custom"})  # noqa: FBT003
-    with patch.object(DriverVersions, "get_versions_file", return_value=file):
+    with patch.object(driver_versions, "get_versions_file", return_value=file):
         driver_class = get_driver_class(None, DRIVER)
     assert driver_class.__module__ == DRIVER
 
@@ -216,8 +216,8 @@ class TestConcurrentWrite:
             write(next(remaining, contents[-1]))
 
         with (
-            patch.object(DriverVersions, "get_versions_file", return_value=file),
-            patch("pysweepme.DriverVersions.time.sleep", new=sleep),
+            patch.object(driver_versions, "get_versions_file", return_value=file),
+            patch("pysweepme.driver_versions.time.sleep", new=sleep),
         ):
             return get_driver_folder(DRIVER)
 

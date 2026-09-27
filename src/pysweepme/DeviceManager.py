@@ -28,7 +28,7 @@ from typing import cast
 
 from ._utils import load_source
 from .Architecture import version_info
-from .DriverVersions import get_driver_folder
+from .driver_versions import get_driver_folder
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import error
 from .FolderManager import addFolderToPATH
