@@ -269,8 +269,8 @@ class FolderManagerInstance:
             self.serverfolder = self.configfolder + os.sep + "server"
             self.profilesfolder = self.roamingpath + os.sep + "profiles"
             self.SweepMeIcon = self.resourcesfolder + os.sep + "icons" + os.sep + "SweepMeS_icon.ico"
-            self.settingfolder = self.publicpath + os.sep + "Settings"
-            self.roamingsetting = self.roamingpath + os.sep + "Settings"
+            self.sequencefolder = self.publicpath + os.sep + "Sequences"
+            self.roamingsequence = self.roamingpath + os.sep + "Sequences"
             self.examplesfolder = self.mainpath + os.sep + "examples"
             self.measurementfolder = self.publicpath + os.sep + "Measurement"
             self.DCfolder = self.mainpath + os.sep + "Devices"
@@ -301,9 +301,9 @@ class FolderManagerInstance:
                 "TEMP": self.tempfolder,  # temporary measurement data in MAIN
                 "RESOURCES": self.resourcesfolder,  # Folder insider MAIN with icon, colormaps, etc.
                 "DATA": self.measurementfolder,  # Measurement data in PUBLIC
-                "SETTINGS": self.settingfolder,  # Settings in PUBLIC
-                "ROAMINGSETTINGS": self.roamingsetting,  # Settings in ROAMING
-                "EXAMPLES": self.examplesfolder,  # Example settings in MAIN
+                "SEQUENCES": self.sequencefolder,  # Sequences in PUBLIC
+                "ROAMINGSEQUENCES": self.roamingsequence,  # Sequences in ROAMING
+                "EXAMPLES": self.examplesfolder,  # Example sequences in MAIN
                 "PROFILES": self.profilesfolder,  # Profile inis in ROAMING
                 # ProgramData path for things that need be accessed by all user but should not be seen easily
                 "PROGRAMDATA": self.programdatapath,
