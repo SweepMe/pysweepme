@@ -744,13 +744,10 @@ class Port:
         For digits > 0, exactly this many bytes are read, even if they contain the read terminator.
         For digits <= 0, one message is read: all bytes up to and including the read terminator of the port, or up
         to the end of the message signalled by the bus (END/EOI) on VISA ports (GPIB, ASRL, USBTMC, TCPIP).
-        SOCKET ports have no such signal, so without 'SOCKET_EOLread' only digits > 0 can be read.
+        COM and SOCKET ports have no such signal, so without a read terminator only digits > 0 can be read.
 
-        A timeout error of the port (pyvisa.errors.VisaIOError, TimeoutError) is raised if the bytes or the end of
-        the message do not arrive in time.
-
-        COM ports keep their former behaviour, on which drivers rely: the terminator ('EOLread' or 'EOL') is removed
-        from a message, and at a timeout the bytes received so far are returned instead of raising an error.
+        If the bytes or the end of the message do not arrive in time, a timeout error is raised:
+        pyvisa.errors.VisaIOError on VISA ports and TimeoutError on COM and SOCKET ports.
 
         PXI ports, whose resources are register-based, and GPIB ports via a Prologix controller do not support raw
         I/O and raise a NotImplementedError.
@@ -1428,18 +1425,24 @@ class COMport(Port):
         self.actualwritetime = time.perf_counter()
 
     def read_raw_internal(self, digits: int) -> bytes:
-        """Read via read_internal() with 'raw_read' set, so the bytes are not decoded.
+        """Read exactly 'digits' bytes, or one message up to and including the EOL if digits <= 0.
 
-        For digits <= 0, a line is read up to the EOL, which is removed. At a timeout, the bytes received so far are
-        returned.
+        Unlike read_internal(), a TimeoutError is raised if the bytes or the EOL do not arrive in time.
         """
-        current = self.port_properties["raw_read"]
-        self.port_properties["raw_read"] = True
-        try:
-            answer: bytes = self.read_internal(max(digits, 0))
-        finally:
-            self.port_properties["raw_read"] = current
+        if digits > 0:
+            answer = self.port.read(digits)
+            if len(answer) < digits:
+                msg = (
+                    f"Port {self.port_properties['ID']} received only {len(answer)} of {digits} bytes within the "
+                    f"timeout: {answer!r}"
+                )
+                raise TimeoutError(msg)
+            return answer
 
+        answer, eol_found = self.read_until_eol(self.get_eol_read())
+        if not eol_found:
+            msg = f"Port {self.port_properties['ID']} received no EOL within the timeout: {answer!r}"
+            raise TimeoutError(msg)
         return answer
 
     def in_waiting(self):
@@ -1447,15 +1450,23 @@ class COMport(Port):
 
     def readline(self):
         # this function allows to change the EOL, rewritten from pyserial
+        eol = self.get_eol_read()
+        line, eol_found = self.read_until_eol(eol)
+        return line[: -len(eol)], eol_found
 
-        if self.port_properties["EOLread"] is not None:
-            EOL = self.port_properties["EOLread"].encode(
-                self.port_properties["encoding"],
-            )
-        else:
-            EOL = self.port_properties["EOL"].encode(self.port_properties["encoding"])
+    def get_eol_read(self) -> bytes:
+        """Return the encoded EOL for reading, which is 'EOLread' or, if it is not set, 'EOL'."""
+        eol = self.port_properties["EOLread"]
+        if eol is None:
+            eol = self.port_properties["EOL"]
+        return eol.encode(self.port_properties["encoding"])
 
-        leneol = len(EOL)
+    def read_until_eol(self, eol: bytes) -> tuple[bytes, bool]:
+        """Read byte by byte until eol or the timeout.
+
+        Returns:
+            The bytes received, including eol, and whether eol was received.
+        """
         line = bytearray()
 
         eol_found = False
@@ -1464,14 +1475,14 @@ class COMport(Port):
             c = self.port.read(1)
             if c:
                 line += c
-                if line[-leneol:] == EOL:
+                if line[-len(eol) :] == eol:
                     eol_found = True
                     break
 
             else:
                 break
 
-        return bytes(line[:-leneol]), eol_found
+        return bytes(line), eol_found
 
     def get_identification(self) -> str:
         """Get details of the COM port.

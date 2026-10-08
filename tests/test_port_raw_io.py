@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from unittest.mock import create_autospec
 
 import pytest
@@ -325,66 +325,78 @@ def test_com_read_raw_with_digits_reads_exact_byte_count() -> None:
     assert fake_serial.data == b"\x03"
 
 
-def test_com_read_raw_with_digits_returns_bytes_received_until_timeout() -> None:
-    """COM keeps returning a short read at a timeout, which e.g. Temperature-JUMO_diraTRON relies on."""
-    port, _ = make_com_port(b"\x01\x06\x00\x01")
+def test_com_read_raw_with_digits_raises_timeout_if_bytes_do_not_arrive() -> None:
+    """A short read raises a TimeoutError that shows the bytes received so far."""
+    port, _ = make_com_port(b"\x01\x90\x02")
 
-    assert port.read_raw(32) == b"\x01\x06\x00\x01"
+    with pytest.raises(TimeoutError, match=r"only 3 of 8 bytes within the timeout: b'\\x01\\x90\\x02'"):
+        port.read_raw(8)
 
 
 @pytest.mark.parametrize("digits", [0, -1])
-def test_com_read_raw_without_digits_reads_line_without_eol(digits: int) -> None:
-    """``digits <= 0`` reads up to the EOL, which COM removes."""
+def test_com_read_raw_without_digits_reads_one_message(digits: int) -> None:
+    """``digits <= 0`` reads up to and including the EOL."""
     port, fake_serial = make_com_port(b"\x01\x02\n\x03")
 
-    assert port.read_raw(digits) == b"\x01\x02"
+    assert port.read_raw(digits) == b"\x01\x02\n"
     assert fake_serial.data == b"\x03"
 
 
+def test_com_read_raw_without_digits_uses_eol_read() -> None:
+    """'EOLread' takes precedence over 'EOL' like in read()."""
+    port, _ = make_com_port(b"\x01\n\x02\r\n")
+    port.port_properties["EOLread"] = "\r\n"
+
+    assert port.read_raw() == b"\x01\n\x02\r\n"
+
+
+def test_com_read_raw_without_digits_raises_timeout_if_eol_does_not_arrive() -> None:
+    """A message without EOL raises a TimeoutError that shows the bytes received so far."""
+    port, _ = make_com_port(b"abc")
+
+    with pytest.raises(TimeoutError, match="no EOL within the timeout: b'abc'"):
+        port.read_raw()
+
+
 @pytest.mark.parametrize(
-    ("data", "digits", "eol"),
+    ("data", "eol", "expected"),
     [
-        (b"\x01\x02\r\n\x03", 0, "\r\n"),
-        (b"  1.5  \n", 0, "\n"),
-        (b"\n\x01", 0, "\n"),
-        (b"abc", 0, "\n"),
-        (b"\x00\n\x01\x02\x03", 4, "\n"),
-        (b"\x00\x01", 4, "\n"),
+        (b"\x01\x02\r\n\x03", "\r\n", (b"\x01\x02", True)),
+        (b"\n\x01", "\n", (b"", True)),
+        (b"abc", "\n", (b"ab", False)),
+        (b"abc", "", (b"", False)),
     ],
 )
-def test_com_read_raw_matches_former_implementation(data: bytes, digits: int, eol: str) -> None:
-    """read_raw() returns byte for byte what it returned before: read() with 'raw_read' set."""
+def test_com_readline_is_unchanged(data: bytes, eol: str, expected: tuple[bytes, bool]) -> None:
+    """readline(), which read() uses, still removes the EOL and reports whether it arrived."""
     port, _ = make_com_port(data)
     port.port_properties["EOL"] = eol
-    reference, _ = make_com_port(data)
-    reference.port_properties["EOL"] = eol
-    reference.port_properties["raw_read"] = True
-    # read() is annotated to return str, but with 'raw_read' it returns bytes
-    former = cast("bytes", reference.read(digits))
 
-    assert port.read_raw(digits) == former
+    assert port.readline() == expected
 
 
-@pytest.mark.parametrize("raw_read", [False, True])
-def test_com_read_raw_restores_raw_read_after_exception(raw_read: bool) -> None:  # noqa: FBT001
-    """The 'raw_read' property is restored even if reading fails."""
+@pytest.mark.parametrize("raw_property", [False, True])
+def test_com_raw_io_ignores_and_keeps_raw_properties(raw_property: bool) -> None:  # noqa: FBT001
+    """'raw_read' and 'raw_write' only affect read() and write(); raw I/O neither uses nor changes them."""
+    port, fake_serial = make_com_port(b"\x01\x02\n")
+    port.port_properties["raw_read"] = raw_property
+    port.port_properties["raw_write"] = raw_property
+
+    port.write_raw(b"\xaa")
+
+    assert port.read_raw() == b"\x01\x02\n"
+    assert fake_serial.written == [b"\xaa"]
+    assert port.port_properties["raw_read"] is raw_property
+    assert port.port_properties["raw_write"] is raw_property
+
+
+def test_com_read_raw_propagates_serial_errors() -> None:
+    """Errors of the serial port reach the caller."""
     port, fake_serial = make_com_port()
-    port.port_properties["raw_read"] = raw_read
     fake_serial.read_error = serial.SerialException("device disconnected")
 
     with pytest.raises(serial.SerialException):
         port.read_raw(4)
-
-    assert port.port_properties["raw_read"] is raw_read
-
-
-def test_com_read_raw_restores_raw_read_after_success() -> None:
-    """After read_raw(), read() decodes again."""
-    port, _ = make_com_port(b"\x01A\n")
-
-    assert port.read_raw(1) == b"\x01"
-    assert port.port_properties["raw_read"] is False
-    assert port.read() == "A"
 
 
 def test_com_raw_write_property_still_appends_eol() -> None:
