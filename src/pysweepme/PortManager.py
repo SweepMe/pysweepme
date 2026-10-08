@@ -381,9 +381,9 @@ class PortManager:
         Args:
             resource: Resource string, e.g. ``"COM5"`` or ``"GPIB0::24::INSTR"``.
             port_type: Registered port-type string (``"COM"``, ``"GPIB"``, ...).
-            properties: Optional ``PortProperties`` overrides. ``timeout`` will be
-                clamped to ``timeout_s`` so identification never blocks the GUI.
-            timeout_s: Maximum read timeout in seconds. Defaults to 1.
+            properties: Optional ``PortProperties`` overrides. A ``timeout`` given here is replaced by
+                ``timeout_s``, so identification never waits longer than that on an unanswering port.
+            timeout_s: Read timeout in seconds used for the probe. Defaults to 1.
 
         Returns:
             The trimmed ``*IDN?`` response, or ``None`` on any failure.

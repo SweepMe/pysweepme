@@ -838,9 +838,10 @@ class Port:
         Subscribers are invoked synchronously after the write/read completes,
         from a ``finally`` block, so failed I/O is also reported (with
         ``ok=False``). A callback already in the subscriber list is not
-        registered twice. Exceptions raised by a callback are swallowed and
-        logged via ``ErrorMessage.error`` so a buggy listener cannot break the
-        instrument-driver execution.
+        registered twice. A callback that raises is unsubscribed and the
+        failure logged via ``ErrorMessage.error``, so a broken listener can
+        neither interrupt the driver nor fail again on every following I/O;
+        subscribe again once it is healthy.
         """
         if callback not in self._trace_subscribers:
             self._trace_subscribers = (*self._trace_subscribers, callback)
