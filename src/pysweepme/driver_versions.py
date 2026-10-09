@@ -48,7 +48,7 @@ DEACTIVATED = "None"
 CUSTOM = "custom"
 PRE_INSTALLED = "pre-installed"
 DEVELOPMENT = "development"
-SETTING = "setting"
+SWEEPME_APP = "sweepme-app"
 
 _VERSIONS_FILE_PATTERN = re.compile(r"^Version(\d+)\.(\d+)\.(\d+)(dev)?\.ini$")
 
@@ -264,7 +264,7 @@ def get_driver_folder(name: str) -> str:
         msg = f"Driver '{name}' is deactivated in the Version Manager ('{versions_file}')."
         raise DriverVersionError(msg)
 
-    if entry in (PRE_INSTALLED, DEVELOPMENT, SETTING):
+    if entry in (PRE_INSTALLED, DEVELOPMENT, SWEEPME_APP):
         msg = (
             f"Driver '{name}' uses the version '{entry}', which is not supported without a folder. "
             "Select another version in the Version Manager or pass the folder of the driver."

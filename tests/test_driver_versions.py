@@ -172,9 +172,9 @@ class TestGetDriverFolder:
         with pytest.raises(DriverVersionError, match="repo"):
             self.resolve(folders, "repo")
 
-    @pytest.mark.parametrize("entry", ["pre-installed", "development", "setting", "None"])
+    @pytest.mark.parametrize("entry", ["pre-installed", "development", "sweepme-app", "None"])
     def test_unsupported(self, folders: dict[str, Path], entry: str) -> None:
-        """Pre-installed, development, and setting versions are not supported, deactivated drivers cannot load."""
+        """Pre-installed, development, and SweepMe! App versions are not supported, deactivated drivers cannot load."""
         with pytest.raises(DriverVersionError):
             self.resolve(folders, entry)
 
