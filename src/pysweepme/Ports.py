@@ -687,15 +687,39 @@ class Port:
     def write_internal(self, cmd: str) -> None:
         """Function to be overwritten by each port to define how to write a command."""
 
-    def write_raw(self, cmd) -> None:
-        """Write a command via a port without encoding."""
-        if cmd != "":
+    def write_raw(self, cmd: bytes | bytearray | memoryview) -> None:
+        """Write bytes via a port unchanged, i.e. without encoding and without appending a terminator.
+
+        The write delay of the port type is kept. Like read_raw(), it is not supported for PXI ports and GPIB ports via
+        a Prologix controller.
+
+        Args:
+            cmd: The bytes to send, as bytes, bytearray or memoryview, which is converted to bytes so that every port
+                type receives the same. Empty commands are skipped like in write(). Any other type raises a TypeError,
+                including str, because raw writing does not guess an encoding. Encode a str first, or use write() to
+                send text with the terminator of the port.
+        """
+        if not isinstance(cmd, (bytes, bytearray, memoryview)):
+            msg = (
+                f"write_raw() sends bytes unchanged and does not accept {type(cmd).__name__}. "
+                f"Pass bytes, bytearray or memoryview, or use write() to send text."
+            )
+            raise TypeError(msg)
+        cmd = bytes(cmd)
+
+        if self.port_properties["debug"]:
+            self.debug(f"write_raw: {cmd!r}")
+
+        if cmd:
             self.write_raw_internal(cmd)
 
-    def write_raw_internal(self, cmd) -> None:
-        """Function to be overwritten by each port to define how to write a command without encoding."""
-        # if this function is not overwritten, it defines a fallback to write()
-        self.write(cmd)
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Function to be overwritten by each port to define how to write bytes unchanged."""
+        msg = (
+            f"Writing raw data is not implemented for port type {self.port_properties['type']}. "
+            f"The port class must overwrite write_raw_internal()."
+        )
+        raise NotImplementedError(msg)
 
     def read(self, digits=0) -> str:
         """Read a command from a port."""
@@ -737,7 +761,28 @@ class Port:
         return self.read(digits=digits)
 
 
-class GPIBport(Port):
+class VISAport(Port):
+    """Base class of the ports whose port object is a pyvisa resource, sharing their raw I/O.
+
+    It is not a port type of its own and is not instantiated directly.
+    """
+
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, without the write termination of the resource."""
+        self.message_based_resource().write_raw(cmd)
+
+    def message_based_resource(self) -> pyvisa.resources.MessageBasedResource:
+        """Return the port object if it is a pyvisa resource that supports message-based I/O."""
+        if not isinstance(self.port, pyvisa.resources.MessageBasedResource):
+            msg = (
+                f"Raw I/O is not supported for port {self.port_properties['ID']}, because its port object "
+                f"{type(self.port).__name__} does not provide message-based VISA I/O."
+            )
+            raise NotImplementedError(msg)
+        return self.port
+
+
+class GPIBport(VISAport):
     port: pyvisa.resources.GPIBInstrument | pyvisa.resources.MessageBasedResource | PrologixGPIBcontroller
 
     def __init__(self, ID) -> None:
@@ -807,6 +852,18 @@ class GPIBport(Port):
 
         self.actualwritetime = time.perf_counter()
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, keeping the write delay of write_internal().
+
+        A Prologix controller does not support raw I/O and raises a NotImplementedError.
+        """
+        while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
+            time.sleep(0.01)
+
+        super().write_raw_internal(cmd)
+
+        self.actualwritetime = time.perf_counter()
+
     def read_internal(self, digits=0):
         if "Prologix" in self.port_properties["ID"]:
             answer = self.port.read(self.port_properties["ID"].split("::")[1])
@@ -821,7 +878,7 @@ class GPIBport(Port):
         return answer
 
 
-class PXIport(Port):
+class PXIport(VISAport):
     port: pyvisa.resources.PXIInstrument | pyvisa.resources.Resource
 
     def __init__(self, ID) -> None:
@@ -859,7 +916,7 @@ class PXIport(Port):
         raise NotImplementedError(msg)
 
 
-class ASRLport(Port):
+class ASRLport(VISAport):
     port: pyvisa.resources.SerialInstrument
 
     def __init__(self, ID) -> None:
@@ -922,11 +979,16 @@ class ASRLport(Port):
         self.port.write(cmd)
         time.sleep(self.port_properties["delay"])
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged and wait for the delay time like write_internal()."""
+        super().write_raw_internal(cmd)
+        time.sleep(self.port_properties["delay"])
+
     def read_internal(self, digits=0):
         return self.port.read()
 
 
-class USBTMCport(Port):
+class USBTMCport(VISAport):
     port: pyvisa.resources.USBInstrument
 
     def __init__(self, ID) -> None:
@@ -967,7 +1029,7 @@ class USBTMCport(Port):
         return self.port.read_raw(digits_or_none)
 
 
-class TCPIPport(Port):
+class TCPIPport(VISAport):
     port: pyvisa.resources.TCPIPInstrument | pyvisa.resources.TCPIPSocket
 
     def __init__(self, ID: str) -> None:
@@ -1021,6 +1083,11 @@ class TCPIPport(Port):
     def write_internal(self, cmd: str) -> None:
         """Write the command to the port and wait for the delay time."""
         self.port.write(cmd)
+        time.sleep(self.port_properties["delay"])
+
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged and wait for the delay time like write_internal()."""
+        super().write_raw_internal(cmd)
         time.sleep(self.port_properties["delay"])
 
     def debug(self, msg: str) -> None:
@@ -1120,6 +1187,17 @@ class SOCKETport(Port):
 
         encoding = self.port_properties["encoding"]
         self.port.sendall((cmd + self.write_termination).encode(encoding))
+
+        self.last_write_time = time.time()
+
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, without write termination, and wait for the delay time like write_internal()."""
+        if time.time() - self.last_write_time < self.port_properties["delay"]:
+            time.sleep(
+                self.port_properties["delay"] - (time.time() - self.last_write_time),
+            )
+
+        self.port.sendall(cmd)
 
         self.last_write_time = time.time()
 
@@ -1242,8 +1320,8 @@ class COMport(Port):
                 cmd_bytes = cmd + eol.encode(self.port_properties["encoding"])
 
         else:
+            # with raw_write, cmd is sent as is, but the encoded eol/terminator is still appended
             cmd_bytes = cmd + eol.encode(self.port_properties["encoding"])
-            # just send cmd as is without any eol/terminator because of raw_write
 
         self.port.write(cmd_bytes)
 
@@ -1296,11 +1374,17 @@ class COMport(Port):
 
         return answer
 
-    def write_raw_internal(self, cmd) -> None:
-        current = self.port_properties["raw_write"]
-        self.port_properties["raw_write"] = True
-        self.write(cmd)
-        self.port_properties["raw_write"] = current
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, keeping the write delay of write_internal().
+
+        Unlike write_internal() with 'raw_write', no EOL is appended.
+        """
+        while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
+            time.sleep(0.01)
+
+        self.port.write(cmd)
+
+        self.actualwritetime = time.perf_counter()
 
     def read_raw_internal(self, digits):
         current = self.port_properties["raw_read"]
