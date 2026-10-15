@@ -588,6 +588,53 @@ class PortProperties(TypedDict, total=False):
     resource: str  # the resource string of the port, e.g. 'GPIB0::1::INSTR'
 
 
+class IncompleteMessageError(TimeoutError):
+    """Raised if the requested bytes do not arrive before the timeout.
+
+    It is raised by Port.read_bytes() and, on COM ports, by Port.read(digits). The bytes received so far cannot be
+    read again. They are available as 'received' and shown in the message.
+    """
+
+    max_shown_bytes = 256
+    """Maximum number of received bytes that are shown in the message."""
+
+    def __init__(self, port_id: str, received: bytes, count: int, *, break_on_termchar: bool = False) -> None:
+        """Create the error with the received bytes and the number of bytes that were requested."""
+        self.received = received
+        self.count = count
+
+        shown = repr(received[: self.max_shown_bytes])
+        if len(received) > self.max_shown_bytes:
+            shown += f" ... ({len(received)} bytes in total)"
+        end_of_message = " and no end of message" if break_on_termchar else ""
+        msg = (
+            f"Incomplete message from port {port_id}: received {len(received)} of {count} bytes{end_of_message} "
+            f"before the timeout: {shown}"
+        )
+        super().__init__(msg)
+
+
+class MessageLengthError(ValueError):
+    """Raised by Port.read(digits) on COM ports if decoding or stripping changed the length of the message.
+
+    All digits bytes arrived, but the returned message is shorter, e.g. because rstrip removed binary bytes that look
+    like whitespace. The message before and after are available as 'received' and 'answer'.
+    """
+
+    def __init__(self, port_id: str, received: str | bytes, answer: str | bytes, digits: int) -> None:
+        """Create the error with the message before and after decoding and stripping."""
+        self.received = received
+        self.answer = answer
+        self.digits = digits
+
+        msg = (
+            f"Message from port {port_id} has {len(answer)} instead of {digits} characters after decoding and "
+            f"stripping: received {received!r}, returned {answer!r}. To keep every byte, set the port property "
+            f"'rstrip' to False or use read_bytes()."
+        )
+        super().__init__(msg)
+
+
 class Port:
     """base class for any port."""
 
@@ -687,19 +734,52 @@ class Port:
     def write_internal(self, cmd: str) -> None:
         """Function to be overwritten by each port to define how to write a command."""
 
-    def write_raw(self, cmd) -> None:
-        """Write a command via a port without encoding."""
-        if cmd != "":
+    def write_raw(self, cmd: bytes | bytearray | memoryview) -> None:
+        """Write bytes via a port unchanged, i.e. without encoding and without appending a terminator.
+
+        The write delay of the port type is kept. Like read_raw(), it is not supported for PXI ports and GPIB ports via
+        a Prologix controller.
+
+        Args:
+            cmd: The bytes to send, as bytes, bytearray or memoryview, which is converted to bytes so that every port
+                type receives the same. Empty commands are skipped like in write(). Any other type raises a TypeError,
+                including str, because raw writing does not guess an encoding. Encode a str first, or use write() to
+                send text with the terminator of the port.
+        """
+        if not isinstance(cmd, (bytes, bytearray, memoryview)):
+            msg = (
+                f"write_raw() sends bytes unchanged and does not accept {type(cmd).__name__}. "
+                f"Pass bytes, bytearray or memoryview, or use write() to send text."
+            )
+            raise TypeError(msg)
+        cmd = bytes(cmd)
+
+        if self.port_properties["debug"]:
+            self.debug(f"write_raw: {cmd!r}")
+
+        if cmd:
             self.write_raw_internal(cmd)
 
-    def write_raw_internal(self, cmd) -> None:
-        """Function to be overwritten by each port to define how to write a command without encoding."""
-        # if this function is not overwritten, it defines a fallback to write()
-        self.write(cmd)
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Function to be overwritten by each port to define how to write bytes unchanged."""
+        msg = (
+            f"Writing raw data is not implemented for port type {self.port_properties['type']}. "
+            f"The port class must overwrite write_raw_internal()."
+        )
+        raise NotImplementedError(msg)
 
     def read(self, digits=0) -> str:
-        """Read a command from a port."""
+        """Read one message from a port and decode it.
+
+        Args:
+            digits: Its meaning differs between the port types: COM ports read digits bytes, SOCKET ports stop after
+                digits bytes or the read terminator, and VISA ports ignore it. On COM ports, a message that is not
+                digits long raises an IncompleteMessageError if fewer bytes arrived in time, or a MessageLengthError
+                if decoding or stripping shortened it, unless the port property 'Exception' is False. To read a
+                number of bytes without decoding and stripping, use read_bytes().
+        """
         answer = self.read_internal(digits)
+        received = answer
 
         # with 'raw_read', everything should be returned.
         if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
@@ -707,6 +787,8 @@ class Port:
 
         if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
             debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
+
+        self.check_read_length(digits, received, answer)
 
         # each port must decide on its own whether an empty string is a timeout error or not
         # if answer == "" and self.port_properties["Exception"] == True:
@@ -719,15 +801,81 @@ class Port:
         """Function to be overwritten by each port to define how to read a command."""
         return ""
 
-    def read_raw(self, digits: int = 0) -> bytes:
-        """Read a command without decoding."""
-        return self.read_raw_internal(digits)
+    def check_read_length(self, digits: int, received: str | bytes, answer: str | bytes) -> None:
+        """Function to be overwritten by ports whose read(digits) reads a number of bytes, to check the answer."""
 
-    def read_raw_internal(self, digits: int) -> bytes:
-        """Function to be overwritten by each port to define how to read a command without decoding."""
+    def read_raw(self, digits: int = 0) -> bytes:
+        """Read one message from a port without decoding it and without stripping anything.
+
+        This corresponds to read_raw() of pyvisa. A message ends with the read terminator of the port, which is
+        included in the returned bytes. On VISA ports (GPIB, ASRL, USBTMC, TCPIP), it also ends with the end of
+        message signalled by the bus (END/EOI). COM and SOCKET ports have no such signal and need a read terminator.
+        If the end of the message does not arrive in time, a timeout error is raised: pyvisa.errors.VisaIOError on
+        VISA ports and TimeoutError on COM and SOCKET ports.
+
+        PXI ports, whose resources are register-based, and GPIB ports via a Prologix controller do not support raw
+        I/O and raise a NotImplementedError.
+
+        To read a given number of bytes, use read_bytes().
+
+        Args:
+            digits: Kept for existing drivers: for digits > 0, read_bytes(digits) is returned instead of a message.
+
+        Returns:
+            The bytes as received.
+        """
+        if digits > 0:
+            return self.read_bytes(digits)
+
+        answer = self.read_raw_internal()
+
+        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+            debug(" ".join([self.port_properties["ID"], "read_raw:", repr(answer)]))
+
+        return answer
+
+    def read_raw_internal(self) -> bytes:
+        """Function to be overwritten by each port to define how to read one message without decoding."""
         msg = (
-            f"Reading raw data from port type {self.port_properties['type']} is not implemented yet. "
-            f"Consider using port.port.read_raw() instead."
+            f"Reading raw data is not implemented for port type {self.port_properties['type']}. "
+            f"The port class must overwrite read_raw_internal()."
+        )
+        raise NotImplementedError(msg)
+
+    def read_bytes(self, count: int, *, break_on_termchar: bool = False) -> bytes:
+        """Read count bytes from a port without decoding them.
+
+        This corresponds to read_bytes() of pyvisa. By default, the read terminator and the end of a message have no
+        meaning: reading continues until count bytes have arrived, and further bytes stay for the next read. With
+        break_on_termchar, reading also stops after the read terminator or, on VISA ports, at the end of a message
+        signalled by the bus (END/EOI), so that fewer bytes can be returned. For count <= 0, nothing is read.
+
+        PXI ports, whose resources are register-based, and GPIB ports via a Prologix controller do not support raw
+        I/O and raise a NotImplementedError.
+
+        Args:
+            count: Number of bytes to read.
+            break_on_termchar: Whether to stop also after the read terminator or at the end of a message.
+
+        Returns:
+            The bytes as received.
+
+        Raises:
+            IncompleteMessageError: If the bytes, or with break_on_termchar the end of the message, do not arrive in
+                time. It is a TimeoutError and contains the bytes received so far.
+        """
+        answer = self.read_bytes_internal(count, break_on_termchar=break_on_termchar) if count > 0 else b""
+
+        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+            debug(" ".join([self.port_properties["ID"], "read_bytes:", repr(answer)]))
+
+        return answer
+
+    def read_bytes_internal(self, count: int, *, break_on_termchar: bool) -> bytes:
+        """Function to be overwritten by each port to define how to read count bytes without decoding."""
+        msg = (
+            f"Reading bytes is not implemented for port type {self.port_properties['type']}. "
+            f"The port class must overwrite read_bytes_internal()."
         )
         raise NotImplementedError(msg)
 
@@ -737,7 +885,66 @@ class Port:
         return self.read(digits=digits)
 
 
-class GPIBport(Port):
+class VISAport(Port):
+    """Base class of the ports whose port object is a pyvisa resource, sharing their raw I/O.
+
+    It is not a port type of its own and is not instantiated directly.
+    """
+
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, without the write termination of the resource."""
+        self.message_based_resource().write_raw(cmd)
+
+    def read_raw_internal(self) -> bytes:
+        """Read one message up to END or the read termination, which is kept."""
+        return self.message_based_resource().read_raw()
+
+    def read_bytes_internal(self, count: int, *, break_on_termchar: bool) -> bytes:
+        """Read count bytes in the same way as read_bytes() of pyvisa, but keep the bytes received before a timeout.
+
+        pyvisa discards them when it raises the timeout error, so its loop is repeated here. Bytes of the low-level
+        read that times out are discarded by pyvisa as well, so only bytes of completed low-level reads are kept.
+        """
+        resource = self.message_based_resource()
+        status_code = pyvisa.constants.StatusCode
+        received = bytearray()
+
+        with resource.ignore_warning(status_code.success_device_not_present, status_code.success_max_count_read):
+            try:
+                while len(received) < count:
+                    size = min(resource.chunk_size, count - len(received))
+                    chunk, status = resource.visalib.read(resource.session, size)
+                    received.extend(chunk)
+                    if break_on_termchar and status in (
+                        status_code.success,
+                        status_code.success_termination_character_read,
+                    ):
+                        break
+            except pyvisa.errors.VisaIOError as exc:
+                if exc.error_code != status_code.error_timeout:
+                    raise
+                port_id = self.port_properties["ID"]
+                raise IncompleteMessageError(
+                    port_id,
+                    bytes(received),
+                    count,
+                    break_on_termchar=break_on_termchar,
+                ) from exc
+
+        return bytes(received)
+
+    def message_based_resource(self) -> pyvisa.resources.MessageBasedResource:
+        """Return the port object if it is a pyvisa resource that supports message-based I/O."""
+        if not isinstance(self.port, pyvisa.resources.MessageBasedResource):
+            msg = (
+                f"Raw I/O is not supported for port {self.port_properties['ID']}, because its port object "
+                f"{type(self.port).__name__} does not provide message-based VISA I/O."
+            )
+            raise NotImplementedError(msg)
+        return self.port
+
+
+class GPIBport(VISAport):
     port: pyvisa.resources.GPIBInstrument | pyvisa.resources.MessageBasedResource | PrologixGPIBcontroller
 
     def __init__(self, ID) -> None:
@@ -807,6 +1014,18 @@ class GPIBport(Port):
 
         self.actualwritetime = time.perf_counter()
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, keeping the write delay of write_internal().
+
+        A Prologix controller does not support raw I/O and raises a NotImplementedError.
+        """
+        while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
+            time.sleep(0.01)
+
+        super().write_raw_internal(cmd)
+
+        self.actualwritetime = time.perf_counter()
+
     def read_internal(self, digits=0):
         if "Prologix" in self.port_properties["ID"]:
             answer = self.port.read(self.port_properties["ID"].split("::")[1])
@@ -821,7 +1040,7 @@ class GPIBport(Port):
         return answer
 
 
-class PXIport(Port):
+class PXIport(VISAport):
     port: pyvisa.resources.PXIInstrument | pyvisa.resources.Resource
 
     def __init__(self, ID) -> None:
@@ -859,7 +1078,7 @@ class PXIport(Port):
         raise NotImplementedError(msg)
 
 
-class ASRLport(Port):
+class ASRLport(VISAport):
     port: pyvisa.resources.SerialInstrument
 
     def __init__(self, ID) -> None:
@@ -922,11 +1141,16 @@ class ASRLport(Port):
         self.port.write(cmd)
         time.sleep(self.port_properties["delay"])
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged and wait for the delay time like write_internal()."""
+        super().write_raw_internal(cmd)
+        time.sleep(self.port_properties["delay"])
+
     def read_internal(self, digits=0):
         return self.port.read()
 
 
-class USBTMCport(Port):
+class USBTMCport(VISAport):
     port: pyvisa.resources.USBInstrument
 
     def __init__(self, ID) -> None:
@@ -961,13 +1185,8 @@ class USBTMCport(Port):
     def read_internal(self, digits=0):
         return self.port.read()
 
-    def read_raw_internal(self, digits: int) -> bytes:
-        """Read raw data without decoding."""
-        digits_or_none = None if digits <= 0 else digits
-        return self.port.read_raw(digits_or_none)
 
-
-class TCPIPport(Port):
+class TCPIPport(VISAport):
     port: pyvisa.resources.TCPIPInstrument | pyvisa.resources.TCPIPSocket
 
     def __init__(self, ID: str) -> None:
@@ -1021,6 +1240,11 @@ class TCPIPport(Port):
     def write_internal(self, cmd: str) -> None:
         """Write the command to the port and wait for the delay time."""
         self.port.write(cmd)
+        time.sleep(self.port_properties["delay"])
+
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged and wait for the delay time like write_internal()."""
+        super().write_raw_internal(cmd)
         time.sleep(self.port_properties["delay"])
 
     def debug(self, msg: str) -> None:
@@ -1123,15 +1347,59 @@ class SOCKETport(Port):
 
         self.last_write_time = time.time()
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, without write termination, and wait for the delay time like write_internal()."""
+        if time.time() - self.last_write_time < self.port_properties["delay"]:
+            time.sleep(
+                self.port_properties["delay"] - (time.time() - self.last_write_time),
+            )
+
+        self.port.sendall(cmd)
+
+        self.last_write_time = time.time()
+
     def read_internal(self, digits: int = 0) -> str:
         """Read until EOL character is found or a given number of digits is reached.
 
         Returns the minimum of the two.
         Digits can only be used for single byte encodings.
         """
-        start_t = time.time()
-        eol = self.read_termination
         encoding = self.port_properties["encoding"]
+        return self.read_until(digits, self.get_read_termination()).decode(encoding)
+
+    def read_raw_internal(self) -> bytes:
+        """Read one message up to and including the read termination, as in read_internal().
+
+        Without read termination, a stream socket has no message boundary, so this raises a TimeoutError.
+        """
+        return self.read_until(0, self.get_read_termination())
+
+    def read_bytes_internal(self, count: int, *, break_on_termchar: bool) -> bytes:
+        """Read count bytes, stopping after the read termination only with break_on_termchar.
+
+        At a timeout, the bytes received so far are removed from the buffer and passed to the IncompleteMessageError.
+        """
+        eol = self.get_read_termination() if break_on_termchar else b""
+        try:
+            return self.read_until(count, eol)
+        except TimeoutError:
+            received = self.buffer
+            self.clear_buffer()
+            port_id = self.port_properties["ID"]
+            raise IncompleteMessageError(port_id, received, count, break_on_termchar=break_on_termchar) from None
+
+    def get_read_termination(self) -> bytes:
+        """Return the encoded read termination, or no bytes if it is not set."""
+        if not self.read_termination:
+            return b""
+        return self.read_termination.encode(self.port_properties["encoding"])
+
+    def read_until(self, digits: int, eol: bytes) -> bytes:
+        """Return the bytes up to the given number of digits or up to and including eol, whichever comes first.
+
+        The bytes are taken from the buffer, which is filled from the socket until the timeout of the port.
+        """
+        start_t = time.time()
 
         while True:
             # If both EOL and digits are given, return the minimum of both
@@ -1142,15 +1410,14 @@ class SOCKETport(Port):
 
             # Start with an EOL index larger than the available buffer size to trigger the readout if it is not updated
             eol_index = float("inf")
-            if eol and eol.encode(encoding) in self.buffer:
-                eol_bytes = eol.encode(encoding)
-                eol_index = self.buffer.find(eol_bytes) + len(eol_bytes)
+            if eol and eol in self.buffer:
+                eol_index = self.buffer.find(eol) + len(eol)
 
             answer_index = min(digit_index, eol_index)
             if 0 < answer_index <= len(self.buffer):
                 answer = self.buffer[: int(answer_index)]
                 self.buffer = self.buffer[int(answer_index) :]
-                return answer.decode(encoding)
+                return answer
 
             if time.time() - start_t > float(self.port_properties["timeout"]):
                 msg = "No EOL found or sufficient digits received from socket."
@@ -1242,8 +1509,8 @@ class COMport(Port):
                 cmd_bytes = cmd + eol.encode(self.port_properties["encoding"])
 
         else:
+            # with raw_write, cmd is sent as is, but the encoded eol/terminator is still appended
             cmd_bytes = cmd + eol.encode(self.port_properties["encoding"])
-            # just send cmd as is without any eol/terminator because of raw_write
 
         self.port.write(cmd_bytes)
 
@@ -1267,6 +1534,8 @@ class COMport(Port):
 
         else:
             answer = self.port.read(digits)
+            if len(answer) < digits and self.port_properties["Exception"] is True:
+                raise IncompleteMessageError(self.port_properties["ID"], answer, digits)
 
             EOLfound = True
 
@@ -1296,18 +1565,53 @@ class COMport(Port):
 
         return answer
 
-    def write_raw_internal(self, cmd) -> None:
-        current = self.port_properties["raw_write"]
-        self.port_properties["raw_write"] = True
-        self.write(cmd)
-        self.port_properties["raw_write"] = current
+    def check_read_length(self, digits: int, received: str | bytes, answer: str | bytes) -> None:
+        """Raise a MessageLengthError if decoding or stripping changed the length of a read with digits > 0.
 
-    def read_raw_internal(self, digits):
-        current = self.port_properties["raw_read"]
-        self.port_properties["raw_read"] = True
-        answer = self.read(digits)
-        self.port_properties["raw_read"] = current
+        Short reads already raise an IncompleteMessageError in read_internal(). Nothing is raised if the port property
+        'Exception' is False.
+        """
+        if digits > 0 and len(answer) != digits and self.port_properties["Exception"] is True:
+            raise MessageLengthError(self.port_properties["ID"], received, answer, digits)
 
+    def write_raw_internal(self, cmd: bytes) -> None:
+        """Send the bytes unchanged, keeping the write delay of write_internal().
+
+        Unlike write_internal() with 'raw_write', no EOL is appended.
+        """
+        while time.perf_counter() - self.actualwritetime < self.port_properties["delay"]:
+            time.sleep(0.01)
+
+        self.port.write(cmd)
+
+        self.actualwritetime = time.perf_counter()
+
+    def read_raw_internal(self) -> bytes:
+        """Read one message up to and including the EOL.
+
+        Unlike read_internal(), a TimeoutError is raised if the EOL does not arrive in time.
+        """
+        answer, eol_found = self.read_until_eol(self.get_eol_read())
+        if not eol_found:
+            msg = f"Port {self.port_properties['ID']} received no EOL within the timeout: {answer!r}"
+            raise TimeoutError(msg)
+        return answer
+
+    def read_bytes_internal(self, count: int, *, break_on_termchar: bool) -> bytes:
+        """Read count bytes, stopping after the EOL only with break_on_termchar.
+
+        Unlike read_internal() with digits, an IncompleteMessageError is raised if the bytes do not arrive in time.
+        """
+        if break_on_termchar:
+            answer, eol_found = self.read_until_eol(self.get_eol_read(), max_count=count)
+            complete = eol_found or len(answer) == count
+        else:
+            answer = self.port.read(count)
+            complete = len(answer) == count
+
+        if not complete:
+            port_id = self.port_properties["ID"]
+            raise IncompleteMessageError(port_id, answer, count, break_on_termchar=break_on_termchar)
         return answer
 
     def in_waiting(self):
@@ -1315,15 +1619,23 @@ class COMport(Port):
 
     def readline(self):
         # this function allows to change the EOL, rewritten from pyserial
+        eol = self.get_eol_read()
+        line, eol_found = self.read_until_eol(eol)
+        return line[: -len(eol)], eol_found
 
-        if self.port_properties["EOLread"] is not None:
-            EOL = self.port_properties["EOLread"].encode(
-                self.port_properties["encoding"],
-            )
-        else:
-            EOL = self.port_properties["EOL"].encode(self.port_properties["encoding"])
+    def get_eol_read(self) -> bytes:
+        """Return the encoded EOL for reading, which is 'EOLread' or, if it is not set, 'EOL'."""
+        eol = self.port_properties["EOLread"]
+        if eol is None:
+            eol = self.port_properties["EOL"]
+        return eol.encode(self.port_properties["encoding"])
 
-        leneol = len(EOL)
+    def read_until_eol(self, eol: bytes, max_count: int = 0) -> tuple[bytes, bool]:
+        """Read byte by byte until eol, the timeout, or max_count bytes if it is greater than 0.
+
+        Returns:
+            The bytes received, including eol, and whether eol was received.
+        """
         line = bytearray()
 
         eol_found = False
@@ -1332,14 +1644,16 @@ class COMport(Port):
             c = self.port.read(1)
             if c:
                 line += c
-                if line[-leneol:] == EOL:
+                if line[-len(eol) :] == eol:
                     eol_found = True
+                    break
+                if len(line) == max_count:
                     break
 
             else:
                 break
 
-        return bytes(line[:-leneol]), eol_found
+        return bytes(line), eol_found
 
     def get_identification(self) -> str:
         """Get details of the COM port.
