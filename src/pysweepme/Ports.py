@@ -589,9 +589,10 @@ class PortProperties(TypedDict, total=False):
 
 
 class IncompleteMessageError(TimeoutError):
-    """Raised by Port.read_bytes() if the requested bytes do not arrive before the timeout.
+    """Raised if the requested bytes do not arrive before the timeout.
 
-    The bytes received so far cannot be read again. They are available as 'received' and shown in the message.
+    It is raised by Port.read_bytes() and, on COM ports, by Port.read(digits). The bytes received so far cannot be
+    read again. They are available as 'received' and shown in the message.
     """
 
     max_shown_bytes = 256
@@ -609,6 +610,27 @@ class IncompleteMessageError(TimeoutError):
         msg = (
             f"Incomplete message from port {port_id}: received {len(received)} of {count} bytes{end_of_message} "
             f"before the timeout: {shown}"
+        )
+        super().__init__(msg)
+
+
+class MessageLengthError(ValueError):
+    """Raised by Port.read(digits) on COM ports if decoding or stripping changed the length of the message.
+
+    All digits bytes arrived, but the returned message is shorter, e.g. because rstrip removed binary bytes that look
+    like whitespace. The message before and after are available as 'received' and 'answer'.
+    """
+
+    def __init__(self, port_id: str, received: str | bytes, answer: str | bytes, digits: int) -> None:
+        """Create the error with the message before and after decoding and stripping."""
+        self.received = received
+        self.answer = answer
+        self.digits = digits
+
+        msg = (
+            f"Message from port {port_id} has {len(answer)} instead of {digits} characters after decoding and "
+            f"stripping: received {received!r}, returned {answer!r}. To keep every byte, set the port property "
+            f"'rstrip' to False or use read_bytes()."
         )
         super().__init__(msg)
 
@@ -747,8 +769,17 @@ class Port:
         raise NotImplementedError(msg)
 
     def read(self, digits=0) -> str:
-        """Read a command from a port."""
+        """Read one message from a port and decode it.
+
+        Args:
+            digits: Its meaning differs between the port types: COM ports read digits bytes, SOCKET ports stop after
+                digits bytes or the read terminator, and VISA ports ignore it. On COM ports, a message that is not
+                digits long raises an IncompleteMessageError if fewer bytes arrived in time, or a MessageLengthError
+                if decoding or stripping shortened it, unless the port property 'Exception' is False. To read a
+                number of bytes without decoding and stripping, use read_bytes().
+        """
         answer = self.read_internal(digits)
+        received = answer
 
         # with 'raw_read', everything should be returned.
         if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
@@ -756,6 +787,8 @@ class Port:
 
         if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
             debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
+
+        self.check_read_length(digits, received, answer)
 
         # each port must decide on its own whether an empty string is a timeout error or not
         # if answer == "" and self.port_properties["Exception"] == True:
@@ -767,6 +800,9 @@ class Port:
     def read_internal(self, digits: int) -> str:
         """Function to be overwritten by each port to define how to read a command."""
         return ""
+
+    def check_read_length(self, digits: int, received: str | bytes, answer: str | bytes) -> None:
+        """Function to be overwritten by ports whose read(digits) reads a number of bytes, to check the answer."""
 
     def read_raw(self, digits: int = 0) -> bytes:
         """Read one message from a port without decoding it and without stripping anything.
@@ -1498,6 +1534,8 @@ class COMport(Port):
 
         else:
             answer = self.port.read(digits)
+            if len(answer) < digits and self.port_properties["Exception"] is True:
+                raise IncompleteMessageError(self.port_properties["ID"], answer, digits)
 
             EOLfound = True
 
@@ -1526,6 +1564,15 @@ class COMport(Port):
             )
 
         return answer
+
+    def check_read_length(self, digits: int, received: str | bytes, answer: str | bytes) -> None:
+        """Raise a MessageLengthError if decoding or stripping changed the length of a read with digits > 0.
+
+        Short reads already raise an IncompleteMessageError in read_internal(). Nothing is raised if the port property
+        'Exception' is False.
+        """
+        if digits > 0 and len(answer) != digits and self.port_properties["Exception"] is True:
+            raise MessageLengthError(self.port_properties["ID"], received, answer, digits)
 
     def write_raw_internal(self, cmd: bytes) -> None:
         """Send the bytes unchanged, keeping the write delay of write_internal().

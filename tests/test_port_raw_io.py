@@ -18,6 +18,7 @@ from pysweepme.Ports import (
     COMport,
     GPIBport,
     IncompleteMessageError,
+    MessageLengthError,
     Port,
     PrologixGPIBcontroller,
     PXIport,
@@ -573,6 +574,84 @@ def test_com_readline_is_unchanged(data: bytes, eol: str, expected: tuple[bytes,
     port.port_properties["EOL"] = eol
 
     assert port.readline() == expected
+
+
+def test_com_read_with_digits_returns_message_of_that_length() -> None:
+    """read(digits) returns the decoded message if it has digits characters."""
+    port, _ = make_com_port(b"1.234")
+
+    assert port.read(5) == "1.234"
+
+
+@pytest.mark.parametrize("digits", [0, None])
+def test_com_read_without_digits_is_not_checked(digits: int | None) -> None:
+    """read() and read(0) read up to the EOL, so their length is not checked."""
+    port, _ = make_com_port(b"1.23A \r\n")
+
+    assert (port.read() if digits is None else port.read(digits)) == "1.23A"
+
+
+def test_com_read_with_digits_raises_incomplete_message_on_short_read() -> None:
+    """Fewer bytes than digits raise an IncompleteMessageError that shows the received bytes."""
+    port, _ = make_com_port(b"0.123A\r\n")
+
+    with pytest.raises(IncompleteMessageError, match=r"received 8 of 10 bytes") as excinfo:
+        port.read(10)
+
+    assert excinfo.value.received == b"0.123A\r\n"
+
+
+def test_com_read_with_digits_raises_message_length_error_if_stripping_shortens_it() -> None:
+    """All digits bytes arrived, but rstrip removed binary bytes that look like whitespace."""
+    port, _ = make_com_port(b"\x01\n\r")
+
+    with pytest.raises(MessageLengthError, match=r"has 1 instead of 3 characters") as excinfo:
+        port.read(3)
+
+    assert isinstance(excinfo.value, ValueError)
+    assert excinfo.value.received == "\x01\n\r"
+    assert excinfo.value.answer == "\x01"
+
+
+def test_com_read_with_digits_keeps_binary_bytes_without_rstrip() -> None:
+    """With the port property 'rstrip' set to False, nothing is stripped, so the length stays digits."""
+    port, _ = make_com_port(b"\x01\n\r")
+    port.port_properties["rstrip"] = False
+
+    assert port.read(3) == "\x01\n\r"
+
+
+def test_com_read_with_digits_and_raw_read_raises_only_on_short_read() -> None:
+    """With 'raw_read', bytes are neither decoded nor stripped, so only a short read raises."""
+    port, _ = make_com_port(b"\x01\n\x02")
+    port.port_properties["raw_read"] = True
+
+    # read() is annotated to return str, but with 'raw_read' it returns bytes
+    answer: str | bytes = port.read(2)
+    assert answer == b"\x01\n"
+    with pytest.raises(IncompleteMessageError, match=r"received 1 of 2 bytes"):
+        port.read(2)
+
+
+def test_com_read_with_digits_returns_what_it_got_if_exception_property_is_false() -> None:
+    """With the port property 'Exception' set to False, read(digits) returns short or stripped messages as before."""
+    short_port, _ = make_com_port(b"0.123A\r\n")
+    short_port.port_properties["Exception"] = False
+    stripped_port, _ = make_com_port(b"\x01\n\r")
+    stripped_port.port_properties["Exception"] = False
+
+    assert short_port.read(10) == "0.123A"
+    assert stripped_port.read(3) == "\x01"
+
+
+def test_read_with_digits_is_not_deprecated(debug_lines: list[str]) -> None:
+    """read(digits) stays a regular way to read, so it logs nothing without the 'debug' port property."""
+    port, _ = make_com_port(b"1.23A\nabc")
+
+    assert port.read() == "1.23A"
+    assert port.read(2) == "ab"
+    assert port.read(1) == "c"
+    assert debug_lines == []
 
 
 @pytest.mark.parametrize("raw_property", [False, True])
