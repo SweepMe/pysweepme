@@ -25,7 +25,8 @@ import contextlib
 import re
 import socket
 import time
-from typing import TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 import psutil
 
@@ -253,6 +254,81 @@ def close_port(port: Port) -> None:
     """Close the given port object if it is open."""
     if port.port_properties["open"]:
         port.close()
+
+
+# How long one walk of the serial device tree answers metadata lookups, in seconds. A caller refreshing a list of ports
+# asks for each COM port in turn, and each lookup used to walk the tree again, so a refresh cost one full scan per COM
+# port. One second covers such a burst while a device plugged in a moment later still shows up straight away.
+_COMPORTS_CACHE_SECONDS = 1.0
+# The last walk under the key "comports", as (time.monotonic() of the walk, listed ports). Changed in place, so it needs
+# no global statement.
+_comports_cache: dict[str, tuple[float, list[Any]]] = {}
+
+
+def _list_comports() -> list[Any]:
+    """Return ``serial.tools.list_ports.comports()``, reusing a result younger than ``_COMPORTS_CACHE_SECONDS``."""
+    now = time.monotonic()
+    cached = _comports_cache.get("comports")
+    if cached is not None and now - cached[0] < _COMPORTS_CACHE_SECONDS:
+        return cached[1]
+    ports = list(serial.tools.list_ports.comports())
+    _comports_cache["comports"] = (now, ports)
+    return ports
+
+
+def get_port_metadata(resource: str, port_type: str) -> dict[str, str | None]:
+    """Extract OS-level metadata for ``resource`` without opening the port.
+
+    Used by the SweepMe! port-identity layer to fingerprint ports stably across
+    re-enumeration (e.g. when a USB-serial device's COM number changes).
+
+    Args:
+        resource: The resource string, e.g. ``"COM5"`` or ``"USB0::0x05E6::0x2400::1234::INSTR"``.
+        port_type: One of the registered port-type strings (``"COM"``, ``"USBTMC"``, ...).
+
+    Returns:
+        Dict with keys ``vid``, ``pid``, ``serial_number``, ``description``,
+        ``manufacturer``. Missing values are ``None``. ``vid`` / ``pid`` are
+        uppercase 4-character hex strings when present. Currently extracts
+        data for ``COM`` ports via ``serial.tools.list_ports`` and for
+        ``USBTMC`` / ``USB`` resources by parsing the VISA resource string.
+        Other port types return all-``None`` (a still-usable fingerprint that
+        relies solely on the resource string and any later ``*IDN?`` response).
+    """
+    fp: dict[str, str | None] = {
+        "vid": None,
+        "pid": None,
+        "serial_number": None,
+        "description": None,
+        "manufacturer": None,
+    }
+
+    if port_type == "COM":
+        try:
+            for info in _list_comports():
+                # ``info.device`` is e.g. "COM5"; the existing find_resources logic
+                # splits on whitespace for safety so we mirror that here.
+                if str(info.device).split(" ")[0] != resource:
+                    continue
+                fp["vid"] = f"{info.vid:04X}" if info.vid is not None else None
+                fp["pid"] = f"{info.pid:04X}" if info.pid is not None else None
+                fp["serial_number"] = info.serial_number or None
+                fp["description"] = info.description or None
+                fp["manufacturer"] = info.manufacturer or None
+                break
+        except Exception:  # noqa: BLE001 — list_ports can fail on weird drivers; not fatal.
+            error(f"get_port_metadata: failed to read COM metadata for {resource}")
+
+    elif port_type in {"USBTMC", "USB"}:
+        # USBTMC resource strings look like: USB0::0x05E6::0x2400::1234567::INSTR.
+        # Parse VID/PID/serial out of the string itself; no need to open the device.
+        match = re.match(r"USB\d+::0x([0-9A-Fa-f]+)::0x([0-9A-Fa-f]+)::([^:]+)::", resource)
+        if match is not None:
+            fp["vid"] = match.group(1).upper().zfill(4)
+            fp["pid"] = match.group(2).upper().zfill(4)
+            fp["serial_number"] = match.group(3) or None
+
+    return fp
 
 
 class PortType:
@@ -635,8 +711,41 @@ class MessageLengthError(ValueError):
         super().__init__(msg)
 
 
+class TraceEvent(TypedDict):
+    """A single port I/O event emitted to trace subscribers.
+
+    Fields:
+        t: ``time.time()`` at emission (after the I/O attempt).
+        direction: The public method that did the I/O: ``"write"``, ``"read"``, ``"write_raw"``, ``"read_raw"`` or
+            ``"read_bytes"``.
+        payload: For ``write``/``read`` events this is the ``str`` command sent or response received (post ``rstrip``
+            for reads). For the raw events it is the ``bytes`` sent or received (or whatever object the device
+            returned).
+        port: The resource string of the port (``port_ID``).
+        ok: ``False`` when the underlying I/O raised — the event is still emitted from the ``finally`` block so
+            consumers can show errors.
+        err: ``str(exception)`` when ``ok`` is ``False``, else ``None``.
+    """
+
+    t: float
+    direction: str
+    payload: object  # str | bytes | object — kept loose so subclasses can emit non-str payloads.
+    port: str
+    ok: bool
+    err: str | None
+
+
+TraceCallback = Callable[[TraceEvent], None]
+
+
 class Port:
     """base class for any port."""
+
+    # Subscribers receive a TraceEvent for every I/O on this port. It is checked first, so a port without subscribers
+    # pays only for one truthiness check per call. Subscribing replaces the tuple instead of changing it: the empty
+    # class-level default is never shared by two ports, it serves subclasses that bypass __init__ as well, and a
+    # callback that unsubscribes while the tuple is iterated does not disturb the iteration.
+    _trace_subscribers: tuple[TraceCallback, ...] = ()
 
     def __init__(self, ID: str) -> None:
         self.port: object = None
@@ -723,13 +832,78 @@ class Port:
         """Print debug information for the port."""
         debug(f"{self.port_properties['ID']} {msg}")
 
+    def subscribe_trace(self, callback: TraceCallback) -> None:
+        """Register ``callback`` to receive a ``TraceEvent`` for every I/O on this port.
+
+        Subscribers are invoked synchronously after the write/read completes,
+        from a ``finally`` block, so failed I/O is also reported (with
+        ``ok=False``). A callback already in the subscriber list is not
+        registered twice. A callback that raises is unsubscribed and the
+        failure logged via ``ErrorMessage.error``, so a broken listener can
+        neither interrupt the driver nor fail again on every following I/O;
+        subscribe again once it is healthy.
+        """
+        if callback not in self._trace_subscribers:
+            self._trace_subscribers = (*self._trace_subscribers, callback)
+
+    def unsubscribe_trace(self, callback: TraceCallback) -> None:
+        """Unregister a previously-subscribed ``callback``. No-op if not registered."""
+        if callback in self._trace_subscribers:
+            self._trace_subscribers = tuple(cb for cb in self._trace_subscribers if cb != callback)
+
+    def _emit_trace(
+        self,
+        direction: str,
+        payload: object,
+        *,
+        ok: bool = True,
+        err: str | None = None,
+    ) -> None:
+        """Fan a trace event out to all subscribers.
+
+        Callers should early-out on empty ``self._trace_subscribers`` so no
+        event dict is constructed when no one is listening.
+        """
+        event: TraceEvent = {
+            "t": time.time(),
+            "direction": direction,
+            "payload": payload,
+            "port": str(self.port_properties.get("ID", "")),
+            "ok": ok,
+            "err": err,
+        }
+        # the tuple is replaced, never changed, so a callback can safely unsubscribe itself
+        for cb in self._trace_subscribers:
+            try:
+                cb(event)
+            except Exception:  # noqa: BLE001, PERF203 — a listener bug must not crash the driver or skip others
+                # Drop the offending subscriber instead of keeping it. A
+                # subscriber that raises once almost always raises every time —
+                # the common case is a GUI consumer whose underlying widget was
+                # destroyed while still subscribed. Keeping it registered turned
+                # one dead listener into a traceback per read and per write for
+                # the rest of the measurement, drowning the debug log.
+                self.unsubscribe_trace(cb)
+                error(
+                    f"Port trace subscriber for {self.port_ID} raised and was unsubscribed. "
+                    f"Re-subscribe once the consumer is healthy again.",
+                )
+
     def write(self, cmd: str) -> None:
         """Write a command via a port."""
         if self.port_properties["debug"]:
             self.debug(f"write: {cmd!r}")
 
-        if cmd != "":
-            self.write_internal(cmd)
+        err: str | None = None
+        try:
+            if cmd != "":
+                self.write_internal(cmd)
+        except Exception as exc:
+            err = str(exc)
+            raise
+        finally:
+            if self._trace_subscribers and cmd != "":
+                self._emit_trace("write", cmd, ok=err is None, err=err)
 
     def write_internal(self, cmd: str) -> None:
         """Function to be overwritten by each port to define how to write a command."""
@@ -757,8 +931,16 @@ class Port:
         if self.port_properties["debug"]:
             self.debug(f"write_raw: {cmd!r}")
 
-        if cmd:
-            self.write_raw_internal(cmd)
+        err: str | None = None
+        try:
+            if cmd:
+                self.write_raw_internal(cmd)
+        except Exception as exc:
+            err = str(exc)
+            raise
+        finally:
+            if self._trace_subscribers and cmd:
+                self._emit_trace("write_raw", cmd, ok=err is None, err=err)
 
     def write_raw_internal(self, cmd: bytes) -> None:
         """Function to be overwritten by each port to define how to write bytes unchanged."""
@@ -778,22 +960,31 @@ class Port:
                 if decoding or stripping shortened it, unless the port property 'Exception' is False. To read a
                 number of bytes without decoding and stripping, use read_bytes().
         """
-        answer = self.read_internal(digits)
-        received = answer
+        err: str | None = None
+        answer = ""
+        try:
+            answer = self.read_internal(digits)
+            received = answer
 
-        # with 'raw_read', everything should be returned.
-        if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
-            answer = answer.rstrip()
+            # with 'raw_read', everything should be returned.
+            if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
+                answer = answer.rstrip()
 
-        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
-            debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
+            if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+                debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
 
-        self.check_read_length(digits, received, answer)
+            self.check_read_length(digits, received, answer)
 
-        # each port must decide on its own whether an empty string is a timeout error or not
-        # if answer == "" and self.port_properties["Exception"] == True:
-        # raise Exception('Port \'%s\' with ID \'%s\' does not respond. Check port properties, e.g. '
-        #                 'timeout, EOL,..' % (self.port_properties["type"],self.port_properties["ID"]) )
+            # each port must decide on its own whether an empty string is a timeout error or not
+            # if answer == "" and self.port_properties["Exception"] == True:
+            # raise Exception('Port \'%s\' with ID \'%s\' does not respond. Check port properties, e.g. '
+            #                 'timeout, EOL,..' % (self.port_properties["type"],self.port_properties["ID"]) )
+        except Exception as exc:
+            err = str(exc)
+            raise
+        finally:
+            if self._trace_subscribers:
+                self._emit_trace("read", answer, ok=err is None, err=err)
 
         return answer
 
@@ -825,12 +1016,22 @@ class Port:
             The bytes as received.
         """
         if digits > 0:
+            # returned before the trace event of read_raw(), so that this is reported once, as the read_bytes() it is
             return self.read_bytes(digits)
 
-        answer = self.read_raw_internal()
+        err: str | None = None
+        answer: bytes = b""
+        try:
+            answer = self.read_raw_internal()
 
-        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
-            debug(" ".join([self.port_properties["ID"], "read_raw:", repr(answer)]))
+            if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+                debug(" ".join([self.port_properties["ID"], "read_raw:", repr(answer)]))
+        except Exception as exc:
+            err = str(exc)
+            raise
+        finally:
+            if self._trace_subscribers:
+                self._emit_trace("read_raw", answer, ok=err is None, err=err)
 
         return answer
 
@@ -864,10 +1065,21 @@ class Port:
             IncompleteMessageError: If the bytes, or with break_on_termchar the end of the message, do not arrive in
                 time. It is a TimeoutError and contains the bytes received so far.
         """
-        answer = self.read_bytes_internal(count, break_on_termchar=break_on_termchar) if count > 0 else b""
+        err: str | None = None
+        answer: bytes = b""
+        try:
+            if count > 0:
+                answer = self.read_bytes_internal(count, break_on_termchar=break_on_termchar)
 
-        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
-            debug(" ".join([self.port_properties["ID"], "read_bytes:", repr(answer)]))
+            if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+                debug(" ".join([self.port_properties["ID"], "read_bytes:", repr(answer)]))
+        except Exception as exc:
+            err = str(exc)
+            raise
+        finally:
+            # nothing is read for count <= 0, like nothing is written for an empty command
+            if self._trace_subscribers and count > 0:
+                self._emit_trace("read_bytes", answer, ok=err is None, err=err)
 
         return answer
 
