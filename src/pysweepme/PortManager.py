@@ -220,6 +220,26 @@ class PortManager:
         if resource in self._ports:
             del self._ports[resource]
 
+    def is_port_open(self, resource: str) -> bool:
+        """Return whether ``resource`` is currently open through this PortManager, e.g. by a running driver.
+
+        Args:
+            resource: str, resource name, e.g. "COM1"
+        """
+        port = self._ports.get(resource)
+        return port is not None and port.port_properties.get("open") is True
+
+    def get_cached_port(self, resource: str) -> Port | None:
+        """Return the Port object for ``resource`` without creating or opening it, or None if there is none yet.
+
+        For observers such as a trace display, which need the object to subscribe to but must never open the port
+        themselves. Use get_port to obtain a port for communication.
+
+        Args:
+            resource: str, resource name, e.g. "COM1"
+        """
+        return self._ports.get(resource)
+
     @staticmethod
     def find_resources(port_types: list[str] | None = None) -> dict[str, list[str]]:
         """Finds resources for given port types. If no port types are given, all possible port types are searched for
