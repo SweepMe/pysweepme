@@ -25,12 +25,23 @@ __version__ = "1.6.1.4"
 
 import sys
 
-from . import Config, DeviceManager, EmptyDeviceClass, ErrorMessage, FolderManager, PortManager, Ports, driver_versions
+from . import (
+    Config,
+    DeviceManager,
+    EmptyDeviceClass,
+    ErrorMessage,
+    FolderManager,
+    PortManager,
+    Ports,
+    commands,
+    driver_versions,
+)
 
 if sys.platform == "win32":
     from . import WinFolder
 
 from ._utils import load_source
+from .commands import Label, Range, Unit, command, describe_commands
 from .DeviceManager import get_driver
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import debug, error
@@ -53,12 +64,18 @@ __all__ = [
     "EmptyDeviceClass",
     "ErrorMessage",
     "FolderManager",
+    "Label",
     "PortManager",
     "Ports",
+    "Range",
+    "Unit",
     "WinFolder",
     "addFolderToPATH",
     "close_port",
+    "command",
+    "commands",
     "debug",
+    "describe_commands",
     "driver_versions",
     "error",
     "get_driver",
