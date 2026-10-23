@@ -239,11 +239,30 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
 
 
 def _hints(func: Callable[..., Any]) -> dict[str, Any]:
-    """Resolved annotations of a function, Annotated kept; {} where they cannot be resolved."""
+    """Resolved annotations of a function, Annotated kept; an annotation that cannot be resolved is left out.
+
+    Each annotation is resolved on its own: a name a driver imports only for type checkers (if TYPE_CHECKING:)
+    leaves that one annotation unchecked, but must not take the checks, units and choices of the others with it.
+    """
+    globalns = getattr(inspect.unwrap(func), "__globals__", None)
     try:
-        return get_type_hints(func, include_extras=True)
-    except Exception:  # noqa: BLE001  # a driver must load even if a name in an annotation cannot be resolved
-        return {}
+        import annotationlib  # noqa: PLC0415  # Python 3.14+: what resolves, resolved; the rest as forward references
+
+        annotations = annotationlib.get_annotations(func, format=annotationlib.Format.FORWARDREF)
+    except ImportError:
+        annotations = dict(getattr(func, "__annotations__", None) or {})
+    hints: dict[str, Any] = {}
+    for name, annotation in annotations.items():
+
+        def single() -> None:
+            """Carries one annotation, so that get_type_hints resolves it alone."""
+
+        single.__annotations__ = {name: annotation}
+        try:
+            hints.update(get_type_hints(single, globalns=globalns, include_extras=True))
+        except Exception:  # noqa: BLE001, S112  # a driver must load even if a name in one annotation cannot be resolved
+            continue
+    return hints
 
 
 # --- checking arguments ------------------------------------------------------------------------------------------

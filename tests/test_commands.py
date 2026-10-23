@@ -385,6 +385,28 @@ def test_undeclared_and_unresolvable_annotations_are_left_alone() -> None:
     assert unresolvable("anything") == "anything"
 
 
+def test_one_unresolvable_annotation_leaves_the_others_checked() -> None:
+    """A name only a type checker knows (if TYPE_CHECKING:) disables the check of that one parameter, not all."""
+
+    class Mixed(EmptyDevice):
+        @command
+        def set_voltage(self, voltage: Annotated[Volts, Range(0.0, 5.0)], handler: NoSuchType) -> None:  # type: ignore[name-defined]  # noqa: F821
+            """Set the voltage."""
+
+        @command(returns=("level",))
+        def get_level(self, mode: SourceMode) -> NoSuchType:  # type: ignore[name-defined]  # noqa: F821
+            """Read a level."""
+            return mode
+
+    device = Mixed()
+    device.set_voltage("2.5", handler=object())
+    with pytest.raises(ValueError, match=r"set_voltage: voltage 6\.0 is outside 0 \.\.\. 5 V\."):
+        device.set_voltage(6.0, handler=object())
+    assert device.get_level("fvmi") == "FVMI"
+    voltage = next(p for p in spec_of(device, "set_voltage").parameters if p.name == "voltage")
+    assert (voltage.value.unit, voltage.value.range) == ("V", Range(0.0, 5.0))
+
+
 # --- describe_commands -----------------------------------------------------------------------------------------------
 
 
