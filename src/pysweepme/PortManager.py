@@ -80,16 +80,14 @@ class PortManager:
     def clear_portmanager_dialog(self) -> None:
         """To be overwritten by PortManagerDialog."""
 
-    def get_resources_available(self, port_types: list[str], port_identification: list[str] | None = None) -> list[str]:
+    def get_resources_available(self, port_types: list[str]) -> list[str]:
         """Returns a list of resources for given port types.
 
-        Called by SweepMe! to get resources for GUI when using 'Find Ports'.
-        Attention: port identification is not properly implemented. Only works for USBTMC and if identification was
-        already retrieved beforehand
+        Called by SweepMe! to get resources for GUI when using 'Find Ports'. Closed ports of these types are dropped
+        from the cached ports, so that their next use creates them anew. Open ports are kept.
 
         Args:
             port_types: list of port types, e.g. ['COM', 'GPIB']
-            port_identification: list of identification strings
 
         Returns:
             List of resource strings
@@ -105,33 +103,15 @@ class PortManager:
 
                 port_list += resources
 
-        for port in self._ports:
-            if self._ports[port].port_properties["type"] in port_types:
-                self._ports[port].port_properties["active"] = False
-
-        # removing all inactive ports
-        ports_to_delete = []
-
-        for port in self._ports:
-            if self._ports[port].port_properties["type"] in port_types:
-                if self._ports[port].port_properties["active"] is False:
-                    ports_to_delete.append(port)
-
-        for port in ports_to_delete:
-            del self._ports[port]
-
-        # list all active ports of appropriate type
-        for port in self._ports:
-            _port_properties = self._ports[port].port_properties
-            if _port_properties["type"] in port_types:
-                if _port_properties["identification"] is not None and _port_properties["type"] in ["USB", "USBTMC"]:
-                    if port_identification is not None:
-                        for identification_string in port_identification:
-                            if identification_string in str(_port_properties["identification"]):
-                                port_list.append(str(_port_properties["resource"]))
-                                break
-                else:
-                    port_list.append(str(_port_properties["resource"]))
+        # An open port is in use, e.g. by a driver; dropping it would leave its connection open with nothing that can
+        # close it any more, blocking the port until the program ends.
+        ports_to_delete = [
+            resource
+            for resource, port in self._ports.items()
+            if port.port_properties["type"] in port_types and not port.port_properties["open"]
+        ]
+        for resource in ports_to_delete:
+            del self._ports[resource]
 
         return port_list
 
