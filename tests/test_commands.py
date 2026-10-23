@@ -441,6 +441,35 @@ def test_kinds_quantities_and_reads() -> None:
     assert mode.value.type_name == "str"
 
 
+def test_kind_run_for_an_action_with_parameters() -> None:
+    """kind="run" makes an action with parameters a run command; refused on a reader and for any other value."""
+
+    class Streaming(EmptyDevice):
+        @command(kind="run")
+        def start_stream(self, pins: list, scan_rate: float) -> None:
+            """Start streaming."""
+
+        @command
+        def set_scan_rate(self, scan_rate: float) -> None:
+            """Set the scan rate."""
+
+    device = Streaming()
+    start = spec_of(device, "start_stream")
+    assert (start.kind, start.quantity) == ("run", None)
+    assert spec_of(device, "set_scan_rate").kind == "set"
+    assert command_info(Streaming.start_stream).kind == "run"
+
+    with pytest.raises(TypeError, match="not for a reader"):
+
+        @command(kind="run", returns=("scan_rate",))
+        def get_scan_rate(_self: object) -> float:
+            """A reader."""
+            return 1.0
+
+    with pytest.raises(ValueError, match="kind can only be 'run'"):
+        command(kind="set")
+
+
 def test_description_and_hazards() -> None:
     """The description is the first docstring line, the hazards come from @command."""
     device = Declared()

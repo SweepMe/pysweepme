@@ -82,9 +82,12 @@ COMMAND_ATTRIBUTE = "__sweepme_command__"
 #: Parameter names that carry the channel of an instrument rather than a value.
 CHANNEL_PARAMETERS = ("channel",)
 
-#: What a reader reads: a new measurement, the last measured value, the setpoint the instrument holds for a
-#: quantity it also measures, or a state that is neither measured nor a setpoint (a status, a setting, an identity).
+#: What a reader reads: a new measurement, the last measured value, a setpoint (a value a command can set, whether or
+#: not the instrument also measures it), or a state (a status or an identity, which no command sets).
 READS = ("measurement", "last", "setpoint", "state")
+#: What @command(kind=...) may state: an action whose parameters configure it, which the signature would take for a
+#: setter. Everything else follows from the signature.
+KINDS = ("run",)
 
 #: Text accepted for a bool parameter, compared case-insensitively.
 TRUE_TEXTS = ("true", "1", "on", "yes")
@@ -144,7 +147,7 @@ class CommandInfo:
     reads: str | None = None
     composite: bool = False
     hazards: tuple[str, ...] = ()
-    kind: str = ""  # "read", "set" or "run", derived from the signature when the method is decorated
+    kind: str = ""  # "read", "set" or "run": derived from the signature when decorated, unless kind="run" was given
 
 
 @dataclass(frozen=True)
@@ -384,10 +387,11 @@ def command(
     reads: str | None = None,
     composite: bool = False,
     hazards: str | Sequence[str] | None = None,
+    kind: str | None = None,
 ) -> Callable[[F], F]: ...
 
 
-def command(
+def command(  # noqa: PLR0913  # the decorator's keywords are its API
     func: F | None = None,
     /,
     *,
@@ -395,6 +399,7 @@ def command(
     reads: str | None = None,
     composite: bool = False,
     hazards: str | Sequence[str] | None = None,
+    kind: str | None = None,
 ) -> F | Callable[[F], F]:
     """Mark a driver method as a communication command and check its arguments on every call.
 
@@ -407,12 +412,15 @@ def command(
         func: The method, when used bare.
         returns: Quantity names of the answered values, in answer order, e.g. ("voltage", "current"). Required for a
             reader, not allowed for a setter or an action.
-        reads: What a reader reads: "measurement" (the default), "last", "setpoint" (the setpoint of a quantity
-            the instrument also measures) or "state" (a status, a setting or an identity: neither measured nor a
-            setpoint).
+        reads: What a reader reads: "measurement" (the default), "last", "setpoint" (a value a command can set,
+            whether or not the instrument also measures it) or "state" (a status or an identity, which no command
+            sets).
         composite: True for a higher-level function that calls other commands, not one instrument command.
         hazards: What can go wrong when the command is called, in plain text: one string, or one string per hazard.
             They are appended to the docstring as a "Hazards:" section, so that help() shows them.
+        kind: "run" for an action that takes parameters, e.g. start_stream(pins, scan_rate): the signature alone
+            would make it a setter. Not allowed for a reader. Without it, a command that takes a value sets and one
+            that takes none runs.
 
     Returns:
         The wrapped method, or a decorator when called with arguments.
@@ -423,7 +431,12 @@ def command(
     if reads is not None and reads not in READS:
         msg = f"@command reads must be one of {', '.join(READS)}, not {reads!r}."
         raise ValueError(msg)
-    declared = CommandInfo(tuple(returns) if returns is not None else None, reads, bool(composite), _hazards(hazards))
+    if kind is not None and kind not in KINDS:
+        msg = (f"@command kind can only be {', '.join(map(repr, KINDS))}, not {kind!r}: "
+               f"set and read follow from the signature.")
+        raise ValueError(msg)
+    declared = CommandInfo(tuple(returns) if returns is not None else None, reads, bool(composite), _hazards(hazards),
+                           kind or "")
 
     def decorate(method: F) -> F:
         """Check the declaration, wrap the method, attach the metadata and show the hazards in the docstring."""
@@ -488,8 +501,13 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     if not reader and (declared.returns is not None or declared.reads is not None):
         msg = f"@command {name}: returns and reads are only for readers, and it is annotated -> None."
         raise TypeError(msg)
+    if reader and declared.kind:
+        msg = f"@command {name}: kind={declared.kind!r} is for an action annotated -> None, not for a reader."
+        raise TypeError(msg)
     if reader:
         return replace(declared, kind="read", reads=declared.reads or "measurement")
+    if declared.kind:
+        return declared
     parameters = _signature(method).parameters.values()
     takes_value = any(
         p.name != "self"
