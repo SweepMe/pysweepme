@@ -78,6 +78,11 @@ class Declared(EmptyDevice):
         """Return the last measured current."""
         return 0.001
 
+    @command(returns=("status",), reads="state")
+    def get_status(self) -> str:
+        """Read the instrument's status."""
+        return "IDLE"
+
     @command(returns=("temperature",))
     def fetch_temperature(self) -> float:
         """Named like a fetch, but declared without reads: a measurement, nothing is guessed from the name."""
@@ -221,6 +226,7 @@ def test_reads_defaults_to_measurement() -> None:
     assert spec_of(device, "fetch_temperature").reads == "measurement"
     assert spec_of(device, "fetch_current").reads == "last"
     assert spec_of(device, "get_level").reads == "setpoint"
+    assert spec_of(device, "get_status").reads == "state"
 
 
 @pytest.mark.skipif(sys.version_info < (3, 14), reason="only Python 3.14 evaluates annotations lazily")

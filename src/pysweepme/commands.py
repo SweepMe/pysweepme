@@ -82,8 +82,9 @@ COMMAND_ATTRIBUTE = "__sweepme_command__"
 #: Parameter names that carry the channel of an instrument rather than a value.
 CHANNEL_PARAMETERS = ("channel",)
 
-#: What a reader reads: a new measurement, the last measured value, or the setpoint the instrument holds.
-READS = ("measurement", "last", "setpoint")
+#: What a reader reads: a new measurement, the last measured value, the setpoint the instrument holds for a
+#: quantity it also measures, or a state that is neither measured nor a setpoint (a status, a setting, an identity).
+READS = ("measurement", "last", "setpoint", "state")
 
 #: Text accepted for a bool parameter, compared case-insensitively.
 TRUE_TEXTS = ("true", "1", "on", "yes")
@@ -406,7 +407,9 @@ def command(
         func: The method, when used bare.
         returns: Quantity names of the answered values, in answer order, e.g. ("voltage", "current"). Required for a
             reader, not allowed for a setter or an action.
-        reads: What a reader reads: "measurement" (the default), "last" or "setpoint".
+        reads: What a reader reads: "measurement" (the default), "last", "setpoint" (the setpoint of a quantity
+            the instrument also measures) or "state" (a status, a setting or an identity: neither measured nor a
+            setpoint).
         composite: True for a higher-level function that calls other commands, not one instrument command.
         hazards: What can go wrong when the command is called, in plain text: one string, or one string per hazard.
             They are appended to the docstring as a "Hazards:" section, so that help() shows them.
