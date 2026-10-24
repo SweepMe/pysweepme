@@ -165,7 +165,7 @@ def test_command_keeps_the_method() -> None:
 def test_command_refuses_wrong_arguments_of_its_own() -> None:
     """The argument returns must be a sequence of names, reads one of the three kinds."""
     with pytest.raises(TypeError, match="sequence of quantity names"):
-        command(returns="voltage")  # type: ignore[arg-type]
+        command(returns="voltage")
     with pytest.raises(ValueError, match="reads must be one of"):
         command(reads="readback")
     with pytest.raises(TypeError, match="hazards must be a text"):
@@ -198,7 +198,7 @@ def test_declared_command_must_state_what_it_is() -> None:
     with pytest.raises(TypeError, match="needs a return annotation"):
 
         @command
-        def no_annotation(value: float):  # type: ignore[no-untyped-def]  # noqa: ANN202
+        def no_annotation(value: float):  # noqa: ANN202
             pass
 
     with pytest.raises(TypeError, match=r"a reader needs returns=\(\.\.\.\)"):
@@ -264,31 +264,31 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
 def test_literal_is_matched_case_insensitively() -> None:
     """A Literal argument is matched without case and outer spaces and handed on in its canonical spelling."""
     device = Declared()
-    device.set_source_mode(1, " fvmi ")
+    device.set_source_mode(1, " fvmi ")  # type: ignore[arg-type]
     assert device.calls[-1] == ("set_source_mode", (1, "FVMI"))
     with pytest.raises(ValueError, match=r"set_source_mode: mode 'XYZ' is not one of FVMI, FIMV\."):
-        device.set_source_mode(1, "XYZ")
+        device.set_source_mode(1, "XYZ")  # type: ignore[arg-type]
 
 
 def test_numbers_are_converted_and_ranges_checked() -> None:
     """Text becomes a number, a range is checked inclusively and the error names command, value and unit."""
     device = Declared()
-    device.set_voltage("1", "2.5")
+    device.set_voltage("1", "2.5")  # type: ignore[arg-type]
     assert device.calls[-1] == ("set_voltage", (1, 2.5))
     device.set_voltage(1, 20)
     assert device.calls[-1] == ("set_voltage", (1, 20.0))
     with pytest.raises(ValueError, match=r"set_voltage: voltage 30\.0 is outside -20\.0 \.\.\. 20\.0 V\."):
         device.set_voltage(1, 30)
     with pytest.raises(ValueError, match="is not a number"):
-        device.set_voltage(1, "high")
+        device.set_voltage(1, "high")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="is not a number"):
         device.set_voltage(1, True)  # noqa: FBT003  # a bool is not taken for a number
-    device.set_points(1, "10")
+    device.set_points(1, "10")  # type: ignore[arg-type]
     assert device.calls[-1] == ("set_points", (1, 10))
-    device.set_points(1, "4.0")
+    device.set_points(1, "4.0")  # type: ignore[arg-type]
     assert device.calls[-1] == ("set_points", (1, 4))
     with pytest.raises(ValueError, match=r"is not a number \(int\)"):
-        device.set_points(1, 2.5)
+        device.set_points(1, 2.5)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match=r"is outside 1 \.\.\."):
         device.set_points(1, 0)
 
@@ -306,7 +306,7 @@ def test_bool_and_optional_arguments() -> None:
     device.set_offset(1, None)
     assert device.calls[-1] == ("set_offset", (1, None))
     device.set_offset(1, "0.5")  # type: ignore[arg-type]
-    assert device.calls[-1] == ("set_offset", (1, 0.5))
+    assert device.calls.pop() == ("set_offset", (1, 0.5))
 
 
 def test_keyword_arguments_are_checked() -> None:
@@ -399,10 +399,10 @@ def test_one_unresolvable_annotation_leaves_the_others_checked() -> None:
             return mode
 
     device = Mixed()
-    device.set_voltage("2.5", handler=object())
+    device.set_voltage("2.5", handler=object())  # type: ignore[arg-type]
     with pytest.raises(ValueError, match=r"set_voltage: voltage 6\.0 is outside 0 \.\.\. 5 V\."):
         device.set_voltage(6.0, handler=object())
-    assert device.get_level("fvmi") == "FVMI"
+    assert device.get_level("fvmi") == "FVMI"  # type: ignore[arg-type]
     voltage = next(p for p in spec_of(device, "set_voltage").parameters if p.name == "voltage")
     assert (voltage.value.unit, voltage.value.range) == ("V", Range(0.0, 5.0))
 
@@ -468,7 +468,7 @@ def test_kind_run_for_an_action_with_parameters() -> None:
 
     class Streaming(EmptyDevice):
         @command(kind="run")
-        def start_stream(self, pins: list, scan_rate: float) -> None:
+        def start_stream(self, pins: list[str], scan_rate: float) -> None:
             """Start streaming."""
 
         @command
@@ -479,7 +479,9 @@ def test_kind_run_for_an_action_with_parameters() -> None:
     start = spec_of(device, "start_stream")
     assert (start.kind, start.quantity) == ("run", None)
     assert spec_of(device, "set_scan_rate").kind == "set"
-    assert command_info(Streaming.start_stream).kind == "run"
+    info = command_info(Streaming.start_stream)
+    assert info is not None
+    assert info.kind == "run"
 
     with pytest.raises(TypeError, match="not for a reader"):
 

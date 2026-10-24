@@ -260,7 +260,8 @@ def _hints(func: Callable[..., Any]) -> dict[str, Any]:
         single.__annotations__ = {name: annotation}
         try:
             hints.update(get_type_hints(single, globalns=globalns, include_extras=True))
-        except Exception:  # noqa: BLE001, S112  # a driver must load even if a name in one annotation cannot be resolved
+        # A driver must load even if a name in one annotation cannot be resolved.
+        except Exception:  # noqa: BLE001, S112
             continue
     return hints
 
@@ -451,11 +452,18 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         msg = f"@command reads must be one of {', '.join(READS)}, not {reads!r}."
         raise ValueError(msg)
     if kind is not None and kind not in KINDS:
-        msg = (f"@command kind can only be {', '.join(map(repr, KINDS))}, not {kind!r}: "
-               f"set and read follow from the signature.")
+        msg = (
+            f"@command kind can only be {', '.join(map(repr, KINDS))}, not {kind!r}: "
+            f"set and read follow from the signature."
+        )
         raise ValueError(msg)
-    declared = CommandInfo(tuple(returns) if returns is not None else None, reads, bool(composite), _hazards(hazards),
-                           kind or "")
+    declared = CommandInfo(
+        tuple(returns) if returns is not None else None,
+        reads,
+        bool(composite),
+        _hazards(hazards),
+        kind or "",
+    )
 
     def decorate(method: F) -> F:
         """Check the declaration, wrap the method, attach the metadata and show the hazards in the docstring."""
