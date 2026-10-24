@@ -42,6 +42,7 @@ import functools
 import inspect
 import math
 import numbers
+import sys
 import types
 from dataclasses import dataclass, field, replace
 from typing import (
@@ -56,6 +57,11 @@ from typing import (
     get_type_hints,
     overload,
 )
+
+if sys.version_info >= (3, 14):
+    # Annotations are evaluated lazily from Python 3.14 on; a version check rather than try/except ImportError, so
+    # that type checkers for older Pythons skip what they cannot know.
+    import annotationlib
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -245,11 +251,10 @@ def _hints(func: Callable[..., Any]) -> dict[str, Any]:
     leaves that one annotation unchecked, but must not take the checks, units and choices of the others with it.
     """
     globalns = getattr(inspect.unwrap(func), "__globals__", None)
-    try:
-        import annotationlib  # noqa: PLC0415  # Python 3.14+: what resolves, resolved; the rest as forward references
-
+    if sys.version_info >= (3, 14):
+        # What resolves, resolved; the rest as forward references.
         annotations = annotationlib.get_annotations(func, format=annotationlib.Format.FORWARDREF)
-    except ImportError:
+    else:
         annotations = dict(getattr(func, "__annotations__", None) or {})
     hints: dict[str, Any] = {}
     for name, annotation in annotations.items():
@@ -482,22 +487,16 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
 
 def _signature(func: Callable[..., Any]) -> inspect.Signature:
     """The signature of a function without evaluating its annotations (Python 3.14 evaluates them lazily)."""
-    try:
-        import annotationlib  # noqa: PLC0415  # Python 3.14+
-
-    except ImportError:
-        return inspect.signature(func)
-    return inspect.signature(func, annotation_format=annotationlib.Format.FORWARDREF)
+    if sys.version_info >= (3, 14):
+        return inspect.signature(func, annotation_format=annotationlib.Format.FORWARDREF)
+    return inspect.signature(func)
 
 
 def _raw_annotations(func: Callable[..., Any]) -> dict[str, Any]:
     """The annotations of a function without evaluating them: strings on Python 3.14+, else as stored."""
-    try:
-        import annotationlib  # noqa: PLC0415  # Python 3.14+, evaluates annotations lazily
-
-    except ImportError:
-        return dict(getattr(func, "__annotations__", None) or {})
-    return dict(annotationlib.get_annotations(func, format=annotationlib.Format.STRING))
+    if sys.version_info >= (3, 14):
+        return dict(annotationlib.get_annotations(func, format=annotationlib.Format.STRING))
+    return dict(getattr(func, "__annotations__", None) or {})
 
 
 def _is_none_annotation(annotation: object) -> bool:
