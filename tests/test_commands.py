@@ -407,6 +407,30 @@ def test_one_unresolvable_annotation_leaves_the_others_checked() -> None:
     assert (voltage.value.unit, voltage.value.range) == ("V", Range(0.0, 5.0))
 
 
+def test_a_class_local_alias_is_checked_also_when_inherited() -> None:
+    """A class-local Annotated alias in a deferred annotation is resolved from the class that defines the command.
+
+    This module has future annotations, so the alias reaches the check as text; a subclass calls the command too.
+    """
+
+    class Base(EmptyDevice):
+        Level = Annotated[float, Unit("V"), Range(-1.0, 1.0)]
+
+        @command
+        def set_level(self, level: Level) -> None:
+            """Set the level."""
+
+    class Child(Base):
+        pass
+
+    for device in (Base(), Child()):
+        with pytest.raises(ValueError, match=r"set_level: level 5\.0 is outside -1\.0 \.\.\. 1\.0 V\."):
+            device.set_level(5.0)
+        device.set_level(0.5)
+        level = spec_of(device, "set_level").parameters[0]
+        assert (level.value.unit, level.value.range) == ("V", Range(-1.0, 1.0))
+
+
 # --- describe_commands -----------------------------------------------------------------------------------------------
 
 

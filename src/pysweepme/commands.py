@@ -244,11 +244,26 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
     return ValueSpec(None if choices is not None else hint, optional, choices, unit, label, value_range)
 
 
-def _hints(func: Callable[..., Any]) -> dict[str, Any]:
+def _defining_namespace(owner: type, func: Callable[..., Any]) -> dict[str, Any] | None:
+    """The namespace of the class in `owner`'s MRO that defines `func`, for its class-local aliases; else None.
+
+    A deferred annotation (from __future__ import annotations) may name an alias of the class body, such as
+    ``Volts = Annotated[float, Range(-1, 1)]``, which the module globals do not hold. An inherited command belongs to
+    the class that defines it, not to the subclass it is called on.
+    """
+    defined_in = inspect.unwrap(func).__qualname__.rpartition(".")[0]
+    for cls in getattr(owner, "__mro__", ()):
+        if cls.__qualname__ == defined_in:
+            return dict(vars(cls))
+    return None
+
+
+def _hints(func: Callable[..., Any], localns: dict[str, Any] | None = None) -> dict[str, Any]:
     """Resolved annotations of a function, Annotated kept; an annotation that cannot be resolved is left out.
 
     Each annotation is resolved on its own: a name a driver imports only for type checkers (if TYPE_CHECKING:)
     leaves that one annotation unchecked, but must not take the checks, units and choices of the others with it.
+    `localns` is the namespace of the class that defines the method (_defining_namespace), for class-local aliases.
     """
     globalns = getattr(inspect.unwrap(func), "__globals__", None)
     if sys.version_info >= (3, 14):
@@ -264,7 +279,7 @@ def _hints(func: Callable[..., Any]) -> dict[str, Any]:
 
         single.__annotations__ = {name: annotation}
         try:
-            hints.update(get_type_hints(single, globalns=globalns, include_extras=True))
+            hints.update(get_type_hints(single, globalns=globalns, localns=localns, include_extras=True))
         # A driver must load even if a name in one annotation cannot be resolved.
         except Exception:  # noqa: BLE001, S112
             continue
@@ -373,11 +388,16 @@ def _checked(func: F) -> F:
     signature = _signature(func)
     specs: dict[str, ValueSpec] | None = None
 
-    def parameter_specs() -> dict[str, ValueSpec]:
-        """The value specs of the parameters, resolved at the first call, when the driver module is complete."""
+    def parameter_specs(args: tuple[Any, ...]) -> dict[str, ValueSpec]:
+        """The value specs of the parameters, resolved at the first call, when the driver module is complete.
+
+        The instance (the first argument of a method) tells which class defines the command, for its class-local
+        aliases.
+        """
         nonlocal specs
         if specs is None:
-            hints = _hints(func)
+            localns = _defining_namespace(type(args[0]), func) if args else None
+            hints = _hints(func, localns)
             specs = {
                 name: value_spec(hints[name])
                 for name, parameter in signature.parameters.items()
@@ -389,7 +409,7 @@ def _checked(func: F) -> F:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the command's own return value
         """Check the given arguments, then call the command."""
-        checks = parameter_specs()
+        checks = parameter_specs(args)
         if checks:
             bound = signature.bind(*args, **kwargs)
             for name, value in bound.arguments.items():
@@ -646,7 +666,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
         signature = _signature(function)
     except (TypeError, ValueError):
         return None
-    hints = _hints(function)
+    hints = _hints(function, _defining_namespace(type(device), function))
     description = description_of(function)
 
     parameters = []
