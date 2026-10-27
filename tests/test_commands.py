@@ -776,3 +776,54 @@ def test_an_override_without_command_is_refused() -> None:
             """Still not a command, and overriding a helper is fine."""
 
     assert command_info(Decorated.set_level) is not None
+
+
+def test_a_numeric_choice_keeps_its_range() -> None:
+    """A Range beside numeric Literal choices still holds: the choice 1 is outside Range(2, 2)."""
+
+    class Narrowed(EmptyDevice):
+        @command
+        def set_gain(self, gain: Annotated[Literal[1, 2], Range(2, 2)]) -> None:
+            """Set the gain."""
+            self.gain = gain
+
+    device = Narrowed()
+    device.set_gain("2")  # type: ignore[arg-type]
+    assert device.gain == 2  # noqa: PLR2004  # the choice 2
+    with pytest.raises(ValueError, match=r"set_gain: gain 1 is outside 2 \.\.\. 2\."):
+        device.set_gain(1)
+
+
+def test_an_array_whose_elements_need_converting_is_refused() -> None:
+    """An array is handed on as it is, so an array of texts for numbers is refused instead of passed on unconverted."""
+    np = pytest.importorskip("numpy")
+
+    class Levels(EmptyDevice):
+        @command
+        def set_levels(self, levels: list[float]) -> None:
+            """Set the levels."""
+            self.levels = levels
+
+    device = Levels()
+    numbers_array = np.array([1, 2])
+    device.set_levels(numbers_array)
+    assert device.levels is numbers_array
+    with pytest.raises(ValueError, match=r"levels\[0\] '1\.5' would need converting"):
+        device.set_levels(np.array(["1.5", "2.0"]))
+    device.set_levels(["1.5", "2.0"])  # type: ignore[list-item]
+    assert device.levels == [1.5, 2.0]
+
+
+def test_a_positional_only_parameter_is_refused() -> None:
+    """A parameter before / cannot be passed by name; the receiver itself may be positional-only."""
+    with pytest.raises(TypeError, match="level is positional-only"):
+
+        @command
+        def set_level(self: object, level: float, /) -> None:
+            """Set the level."""
+
+    @command
+    def set_offset(self: object, /, offset: float) -> None:
+        """Set the offset."""
+
+    assert command_info(set_offset) is not None

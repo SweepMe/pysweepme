@@ -408,7 +408,9 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
     if spec.items is not None:
         return _check_items(command_name, parameter, value, spec.items)
     if spec.choices is not None:
-        return _check_choice(command_name, parameter, value, spec.choices)
+        choice = _check_choice(command_name, parameter, value, spec.choices)
+        _check_range(command_name, parameter, choice, spec)
+        return choice
     if spec.type is bool:
         flag = _to_bool(value)
         if flag is None:
@@ -418,14 +420,19 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
         number = _to_number(value, spec.type)
         if number is None:
             raise _fail(command_name, parameter, value, f"is not a number ({spec.type.__name__}).")
-        if spec.range is not None and not spec.range.contains(number):
-            unit = f" {spec.unit}" if spec.unit else ""
-            raise _fail(command_name, parameter, number, f"is outside {spec.range}{unit}.")
+        _check_range(command_name, parameter, number, spec)
         return number
-    if spec.range is not None and isinstance(value, numbers.Real) and not spec.range.contains(float(value)):
+    _check_range(command_name, parameter, value, spec)
+    return value
+
+
+def _check_range(command_name: str, parameter: str, value: object, spec: ValueSpec) -> None:
+    """Refuse a number outside the spec's Range (inclusive); anything that is no number is not range-checked."""
+    if spec.range is None or isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return
+    if not spec.range.contains(float(value)):
         unit = f" {spec.unit}" if spec.unit else ""
         raise _fail(command_name, parameter, value, f"is outside {spec.range}{unit}.")
-    return value
 
 
 def _check_choice(command_name: str, parameter: str, value: object, choices: tuple[Any, ...]) -> Any:  # noqa: ANN401
@@ -445,7 +452,11 @@ def _checks_something(spec: ValueSpec) -> bool:
 
 
 def _check_items(command_name: str, parameter: str, value: object, items: ValueSpec) -> Any:  # noqa: ANN401
-    """Check every element of a list argument; a list or tuple comes back converted, a NumPy array as it was."""
+    """Check every element of a list argument; a list or tuple comes back converted.
+
+    A NumPy array is handed on as it is, so an element that would need converting (an array of texts for a number) is
+    refused rather than passed on unconverted; pysweepme does not import NumPy to build a converted one.
+    """
     if isinstance(value, (str, bytes)) or not (isinstance(value, (list, tuple)) or hasattr(value, "tolist")):
         raise _fail(command_name, parameter, value, "is not a list.")
     if not _checks_something(items):
@@ -453,7 +464,13 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
     if not isinstance(value, (list, tuple)):
         flat = value.ravel() if hasattr(value, "ravel") else value  # an array
         for index, item in enumerate(flat.tolist()):
-            check_value(command_name, f"{parameter}[{index}]", item, items)
+            if check_value(command_name, f"{parameter}[{index}]", item, items) != item:
+                raise _fail(
+                    command_name,
+                    f"{parameter}[{index}]",
+                    item,
+                    "would need converting: pass a list, or an array of the annotated type.",
+                )
         return value
     checked = [check_value(command_name, f"{parameter}[{index}]", item, items) for index, item in enumerate(value)]
     return tuple(checked) if isinstance(value, tuple) else checked
@@ -612,14 +629,15 @@ def _is_none_annotation(annotation: object) -> bool:
     return isinstance(annotation, str) and annotation.strip() in ("None", "NoneType")
 
 
-def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo:
-    """Check what a declared command must state and complete it with its kind and the default of reads.
-
-    In a declared driver nothing is guessed from method names: a command needs a return annotation, a reader needs
-    the quantity names of its answer in returns, and a reader reads a measurement unless reads says otherwise.
-    """
-    name = getattr(method, "__name__", repr(method))
-    for parameter in _signature(method).parameters.values():
+def _check_parameters(name: str, method: Callable[..., Any]) -> None:
+    """Refuse parameters a call by name cannot fill: positional-only ones, *args/**kwargs, a channel default."""
+    for index, parameter in enumerate(_signature(method).parameters.values()):
+        if parameter.kind is inspect.Parameter.POSITIONAL_ONLY and index > 0:
+            msg = (
+                f"@command {name}: {parameter.name} is positional-only (before /) and cannot be passed by name "
+                f"(an agent or a tile calls commands with named arguments); remove the /."
+            )
+            raise TypeError(msg)
         if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             stars = "*" if parameter.kind is inspect.Parameter.VAR_POSITIONAL else "**"
             msg = (
@@ -633,6 +651,16 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
                 f"address whichever {parameter.name} the default names."
             )
             raise TypeError(msg)
+
+
+def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo:
+    """Check what a declared command must state and complete it with its kind and the default of reads.
+
+    In a declared driver nothing is guessed from method names: a command needs a return annotation, a reader needs
+    the quantity names of its answer in returns, and a reader reads a measurement unless reads says otherwise.
+    """
+    name = getattr(method, "__name__", repr(method))
+    _check_parameters(name, method)
     annotations = _raw_annotations(method)
     if "return" not in annotations:
         msg = f"@command {name}: needs a return annotation, -> None for a setter or an action."
