@@ -50,6 +50,13 @@ class EmptyDevice:
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Complete the docstrings of the driver's composite commands with the hazards they inherit."""
+        super().__init_subclass__(**kwargs)
+        from .commands import complete_hazard_sections  # noqa: PLC0415  # commands imports this module
+
+        complete_hazard_sections(cls)
+
     def __init__(self) -> None:
         self.variables: list[str] = []
         self.units: list[str] = []

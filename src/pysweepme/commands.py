@@ -38,12 +38,15 @@ written on the value with standard Python annotations:
 
 from __future__ import annotations
 
+import ast
 import functools
 import inspect
 import math
 import numbers
 import sys
+import textwrap
 import types
+import weakref
 from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
@@ -202,6 +205,8 @@ class CommandSpec:
     declared: bool
     quantity: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
+    #: For a composite: the commands it calls, read from its code (hazards then holds theirs as well).
+    calls: tuple[str, ...] = ()
 
 
 # --- annotations -------------------------------------------------------------------------------------------------
@@ -496,8 +501,7 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         wrapped = _checked(method)
         setattr(wrapped, COMMAND_ATTRIBUTE, info)
         if info.hazards:
-            section = "\n".join(f"    {hazard}" for hazard in info.hazards)
-            wrapped.__doc__ = f"{inspect.cleandoc(method.__doc__ or '')}\n\nHazards:\n{section}".lstrip()
+            wrapped.__doc__ = _with_hazards(method.__doc__, info.hazards)
         return wrapped
 
     if func is not None:
@@ -575,10 +579,121 @@ def _hazards(hazards: str | Sequence[str] | None) -> tuple[str, ...]:
     return tuple(text for item in items if (text := " ".join(item.split())))
 
 
+def _with_hazards(doc: str | None, hazards: Sequence[str]) -> str:
+    """A docstring with the hazards as a "Hazards:" section at its end, so that help() shows them."""
+    section = "\n".join(f"    {hazard}" for hazard in hazards)
+    return f"{inspect.cleandoc(doc or '')}\n\nHazards:\n{section}".lstrip()
+
+
 def command_info(method: object) -> CommandInfo | None:
     """The @command metadata of a method or function, None if it is not decorated."""
     info = getattr(method, COMMAND_ATTRIBUTE, None)
     return info if isinstance(info, CommandInfo) else None
+
+
+# --- what a composite calls --------------------------------------------------------------------------------------
+
+#: Per driver class, the commands each composite calls - read from the code once.
+_CALLS: weakref.WeakKeyDictionary[type, dict[str, tuple[str, ...]]] = weakref.WeakKeyDictionary()
+
+
+def _self_calls(function: Callable[..., Any]) -> list[str]:
+    """The methods a function calls on its instance (`self.<name>(...)`), in source order; [] without its source."""
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(inspect.unwrap(function))))
+    except (OSError, TypeError, SyntaxError):
+        return []
+    definition = tree.body[0] if tree.body else None
+    if not isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef)) or not definition.args.args:
+        return []
+    instance = definition.args.args[0].arg
+    calls = [
+        node
+        for node in ast.walk(definition)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == instance
+    ]
+    calls.sort(key=lambda node: (node.lineno, node.col_offset))
+    return list(dict.fromkeys(node.func.attr for node in calls))  # type: ignore[attr-defined]  # checked above
+
+
+def _defined_by_driver(cls: type, name: str) -> bool:
+    """Whether the driver defines this method itself (or a driver base class does), not EmptyDevice or object."""
+    from .EmptyDeviceClass import EmptyDevice  # noqa: PLC0415  # EmptyDeviceClass imports this module lazily too
+
+    owner = next((klass for klass in cls.__mro__ if name in vars(klass)), None)
+    return owner is not None and owner is not object and not issubclass(EmptyDevice, owner)
+
+
+def calls_of(cls: type, name: str) -> tuple[str, ...]:
+    """The commands a command calls, read from its code: helpers of the driver are followed, a command stops the walk.
+
+    Only `self.<name>(...)` calls are seen - not a call through getattr, nor one into a function outside the driver
+    class, nor raw port traffic. Without readable source the answer is ().
+    """
+    known = _CALLS.setdefault(cls, {})
+    if name in known:
+        return known[name]
+    found: list[str] = []
+    seen = {name}
+
+    def walk(method: Callable[..., Any]) -> None:
+        """Into a helper where it is called, so the commands come in the order they are called."""
+        for called in _self_calls(method):
+            if called in seen:
+                continue
+            seen.add(called)
+            member = getattr(cls, called, None)
+            if command_info(member) is not None:
+                found.append(called)
+            elif callable(member) and _defined_by_driver(cls, called):
+                walk(member)
+
+    method = getattr(cls, name, None)
+    if callable(method):
+        walk(method)
+    known[name] = tuple(found)
+    return known[name]
+
+
+def _hazard_origins(cls: type, name: str, stack: frozenset[str]) -> list[tuple[str, str]]:
+    """(command, hazard) for a command's own hazards and, for a composite, those of every command it calls."""
+    info = command_info(getattr(cls, name, None))
+    if info is None:
+        return []
+    pairs = [(name, hazard) for hazard in info.hazards]
+    if info.composite:
+        for called in calls_of(cls, name):
+            if called in stack:
+                continue  # a cycle: what it brings is already being collected
+            for pair in _hazard_origins(cls, called, stack | {called}):
+                if pair not in pairs:
+                    pairs.append(pair)
+    return pairs
+
+
+def hazards_of(cls: type, name: str) -> tuple[str, ...]:
+    """A command's hazards: its own, then those a composite inherits, each prefixed with the command it comes from."""
+    return tuple(
+        hazard if origin == name else f"{origin}: {hazard}"
+        for origin, hazard in _hazard_origins(cls, name, frozenset({name}))
+    )
+
+
+def complete_hazard_sections(cls: type) -> None:
+    """Show the inherited hazards in the docstrings of the composites a driver class defines.
+
+    Called by EmptyDevice.__init_subclass__: only once the class body ran are the commands a composite calls there.
+    """
+    for name, member in vars(cls).items():
+        info = command_info(member)
+        if info is None or not info.composite:
+            continue
+        hazards = hazards_of(cls, name)
+        if hazards != info.hazards:
+            member.__doc__ = _with_hazards(inspect.unwrap(member).__doc__, hazards)
 
 
 # --- describe_commands -------------------------------------------------------------------------------------------
@@ -723,7 +838,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
     return CommandSpec(
         name=name,
         description=description,
-        hazards=info.hazards if info else (),
+        hazards=hazards_of(type(device), name) if info else (),
         parameters=tuple(parameters),
         kind=kind,
         returns=returns,
@@ -733,6 +848,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
         declared=info is not None,
         quantity=quantity,
         labels=labels,
+        calls=calls_of(type(device), name) if info and info.composite else (),
     )
 
 

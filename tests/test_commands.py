@@ -529,6 +529,90 @@ def test_description_and_hazards() -> None:
     assert description_of(lambda: None) == ""
 
 
+class Composed(EmptyDevice):
+    """A driver whose composites call commands directly, through a helper and through each other."""
+
+    @command(hazards="HIGH drives the output to compliance.")
+    def set_range(self, range_type: Literal["AUTO", "HIGH"]) -> None:
+        """Set the range."""
+
+    @command(hazards=("Drops the USB connection.",))
+    def reset(self) -> None:
+        """Reset the instrument."""
+
+    @command
+    def set_level(self, level: float) -> None:
+        """Set the level."""
+
+    def _prepare(self) -> None:
+        self.reset()
+        self.set_range("AUTO")
+
+    @command(composite=True)
+    def start_over(self) -> None:
+        """Reset, then set the auto range - through a helper."""
+        self._prepare()
+        self.set_level(0.0)
+
+    @command(composite=True, hazards="Sends its own raw commands.")
+    def ramp(self, level: float) -> None:
+        """Start over, then go to the level."""
+        self.start_over()
+        self.set_level(level)
+        self.ramp(level)  # a cycle must not hang the walk
+
+    @command(composite=True)
+    def by_name(self) -> None:
+        """Calls through getattr: not seen."""
+        getattr(self, "reset")()  # noqa: B009  # the case the code cannot show
+
+
+def test_a_composite_inherits_the_hazards_of_what_it_calls() -> None:
+    """A composite's calls are read from its code, helpers followed; their hazards are added with their origin."""
+    device = Composed()
+    start_over = spec_of(device, "start_over")
+    assert start_over.calls == ("reset", "set_range", "set_level")
+    assert start_over.hazards == (
+        "reset: Drops the USB connection.",
+        "set_range: HIGH drives the output to compliance.",
+    )
+    ramp = spec_of(device, "ramp")
+    assert ramp.calls == ("start_over", "set_level")
+    assert ramp.hazards == (
+        "Sends its own raw commands.",
+        "reset: Drops the USB connection.",
+        "set_range: HIGH drives the output to compliance.",
+    )
+    assert spec_of(device, "by_name").calls == ()
+    assert spec_of(device, "by_name").hazards == ()
+    assert spec_of(device, "set_range").calls == ()
+    assert spec_of(device, "set_range").hazards == ("HIGH drives the output to compliance.",)
+
+
+def test_inherited_hazards_reach_the_docstring() -> None:
+    """help() shows a composite's inherited hazards too, completed when the driver class is created."""
+    doc = inspect.getdoc(Composed.ramp) or ""
+    assert doc.startswith("Start over, then go to the level.")
+    assert "Hazards:" in doc
+    assert "Sends its own raw commands." in doc
+    assert "reset: Drops the USB connection." in doc
+    assert "set_range: HIGH drives the output to compliance." in doc
+    assert "Hazards:" not in (inspect.getdoc(Composed.by_name) or "")
+
+
+def test_a_composite_of_a_subclass_inherits_from_the_base() -> None:
+    """A composite calling commands its base class defines inherits their hazards as well."""
+
+    class Child(Composed):
+        @command(composite=True)
+        def restart(self) -> None:
+            """Reset and set the range."""
+            self.reset()
+
+    assert spec_of(Child(), "restart").hazards == ("reset: Drops the USB connection.",)
+    assert "reset: Drops the USB connection." in (inspect.getdoc(Child.restart) or "")
+
+
 def test_derived_labels() -> None:
     """A label derived from a quantity name starts upper case and has spaces."""
     assert derived_label("voltage_limit") == "Voltage limit"
