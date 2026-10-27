@@ -345,15 +345,34 @@ def _to_bool(value: object) -> bool | None:
 
 
 def _match_choice(value: object, choices: tuple[Any, ...]) -> tuple[bool, Any]:
-    """The canonical choice a value stands for: equal, or equal as text ignoring case and outer spaces."""
+    """The choice a value stands for: a text choice written exactly, a number choice also given as text.
+
+    Text is never adjusted - "fvmi" is not "FVMI" (decided 2026-10-27 after review: a clear error rather than a
+    silent correction, and two modes may differ in case only). What is converted is the type: "2" or 2.0 stand for
+    the choice 2, and 2 for the choice "2".
+    """
     for choice in choices:
         if value == choice and type(value) is type(choice):
             return True, choice
-    text = str(value).strip().casefold()
     for choice in choices:
-        if str(choice).strip().casefold() == text:
+        if isinstance(choice, bool) or isinstance(value, bool):
+            continue  # True is not 1, and "True" is no number
+        if isinstance(choice, numbers.Real):
+            number = _to_float(value)
+            if number is not None and number == choice:
+                return True, choice
+        elif isinstance(choice, str) and isinstance(value, numbers.Real) and str(value) == choice:
             return True, choice
     return False, None
+
+
+def _near_choice(value: object, choices: tuple[Any, ...]) -> str:
+    """A hint for a text that misses a choice only in case or outer spaces: " Did you mean 'FVMI'?", else ""."""
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().casefold()
+    near = [choice for choice in choices if isinstance(choice, str) and choice.strip().casefold() == text]
+    return f" Did you mean {near[0]!r}?" if len(near) == 1 else ""
 
 
 def check_value(command_name: str, parameter: str, value: object, spec: ValueSpec) -> Any:  # noqa: ANN401
@@ -364,7 +383,8 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
         found, choice = _match_choice(value, spec.choices)
         if not found:
             allowed = ", ".join(str(c) for c in spec.choices)
-            raise _fail(command_name, parameter, value, f"is not one of {allowed}.")
+            hint = _near_choice(value, spec.choices)
+            raise _fail(command_name, parameter, value, f"is not one of {allowed}.{hint}")
         return choice
     if spec.type is bool:
         flag = _to_bool(value)

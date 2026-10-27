@@ -261,13 +261,62 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
         del sys.modules["forward_driver"]
 
 
-def test_literal_is_matched_case_insensitively() -> None:
-    """A Literal argument is matched without case and outer spaces and handed on in its canonical spelling."""
+def test_a_text_choice_must_be_written_exactly() -> None:
+    """A Literal text is matched exactly - no case folding, no trimming; a near miss gets a clear error with a hint."""
     device = Declared()
-    device.set_source_mode(1, " fvmi ")  # type: ignore[arg-type]
+    device.set_source_mode(1, "FVMI")
     assert device.calls[-1] == ("set_source_mode", (1, "FVMI"))
-    with pytest.raises(ValueError, match=r"set_source_mode: mode 'XYZ' is not one of FVMI, FIMV\."):
+    calls = len(device.calls)
+    with pytest.raises(ValueError, match=r"mode 'fvmi' is not one of FVMI, FIMV\. Did you mean 'FVMI'\?"):
+        device.set_source_mode(1, "fvmi")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"mode ' FIMV ' is not one of FVMI, FIMV\. Did you mean 'FIMV'\?"):
+        device.set_source_mode(1, " FIMV ")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"set_source_mode: mode 'XYZ' is not one of FVMI, FIMV\.$"):
         device.set_source_mode(1, "XYZ")  # type: ignore[arg-type]
+    assert len(device.calls) == calls
+
+
+def test_choices_that_differ_only_in_case_stay_apart() -> None:
+    """Two modes that differ only in case are two choices, and each arrives as written."""
+
+    class Cased(EmptyDevice):
+        @command
+        def set_mode(self, mode: Literal["a", "A"]) -> None:
+            """Set the mode."""
+            self.mode = mode
+
+    device = Cased()
+    device.set_mode("A")
+    assert device.mode == "A"
+    device.set_mode("a")
+    assert device.mode == "a"
+
+
+def test_a_number_choice_is_converted_from_text() -> None:
+    """Type conversion stays: "2" and 2.0 stand for the choice 2, 2 for the choice "2"; a bool is never a number."""
+
+    class Numbered(EmptyDevice):
+        @command
+        def set_range(self, range_index: Literal[1, 2]) -> None:
+            """Set the range."""
+            self.range_index = range_index
+
+        @command
+        def set_slot(self, slot: Literal["1", "2"]) -> None:
+            """Set the slot."""
+            self.slot = slot
+
+    device = Numbered()
+    for given in ("2", 2.0, " 2 "):
+        device.set_range(given)  # type: ignore[arg-type]
+        assert device.range_index == 2  # noqa: PLR2004  # the choice 2 of Literal[1, 2]
+        assert type(device.range_index) is int
+    device.set_slot(2)  # type: ignore[arg-type]
+    assert device.slot == "2"
+    with pytest.raises(ValueError, match="is not one of 1, 2"):
+        device.set_range(True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="is not one of 1, 2"):
+        device.set_range("3")  # type: ignore[arg-type]
 
 
 def test_numbers_are_converted_and_ranges_checked() -> None:
@@ -357,8 +406,10 @@ def test_driver_module_with_future_annotations(tmp_path: Path) -> None:
     try:
         spec.loader.exec_module(module)
         device = module.Device()
-        device.set_range(1, "high")
+        device.set_range(1, "HIGH")
         assert device.last == "HIGH"
+        with pytest.raises(ValueError, match="Did you mean 'HIGH'"):
+            device.set_range(1, "high")
         device.set_voltage(1, "5")
         assert device.last == float("5")
         with pytest.raises(ValueError, match=r"outside 0 \.\.\. 5 V"):
@@ -400,9 +451,10 @@ def test_one_unresolvable_annotation_leaves_the_others_checked() -> None:
 
     device = Mixed()
     device.set_voltage("2.5", handler=object())  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match=r"set_voltage: voltage 6\.0 is outside 0 \.\.\. 5 V\."):
+    # typing caches Annotated by equality and Range(0, 5) == Range(0.0, 5.0): the bounds print as either.
+    with pytest.raises(ValueError, match=r"set_voltage: voltage 6\.0 is outside 0(\.0)? \.\.\. 5(\.0)? V\."):
         device.set_voltage(6.0, handler=object())
-    assert device.get_level("fvmi") == "FVMI"  # type: ignore[arg-type]
+    assert device.get_level("FVMI") == "FVMI"
     voltage = next(p for p in spec_of(device, "set_voltage").parameters if p.name == "voltage")
     assert (voltage.value.unit, voltage.value.range) == ("V", Range(0.0, 5.0))
 
