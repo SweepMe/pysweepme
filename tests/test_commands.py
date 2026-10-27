@@ -280,16 +280,19 @@ def test_choices_that_differ_only_in_case_stay_apart() -> None:
     """Two modes that differ only in case are two choices, and each arrives as written."""
 
     class Cased(EmptyDevice):
+        def __init__(self) -> None:
+            super().__init__()
+            self.modes: list[str] = []
+
         @command
         def set_mode(self, mode: Literal["a", "A"]) -> None:
             """Set the mode."""
-            self.mode = mode
+            self.modes.append(mode)
 
     device = Cased()
     device.set_mode("A")
-    assert device.mode == "A"
     device.set_mode("a")
-    assert device.mode == "a"
+    assert device.modes == ["A", "a"]
 
 
 def test_a_number_choice_is_converted_from_text() -> None:
