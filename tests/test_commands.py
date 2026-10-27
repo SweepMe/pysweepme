@@ -672,3 +672,21 @@ def test_derived_labels() -> None:
     """A label derived from a quantity name starts upper case and has spaces."""
     assert derived_label("voltage_limit") == "Voltage limit"
     assert derived_label("rf_power") == "Rf power"
+
+
+def test_the_receiver_passed_by_keyword_resolves_class_local_aliases() -> None:
+    """A first call that passes the instance by keyword must not cache a spec without the class-local alias."""
+
+    class Base(EmptyDevice):
+        Level = Annotated[float, Unit("V"), Range(-1.0, 1.0)]
+
+        @command
+        def set_level(self, level: Level) -> None:
+            """Set the level."""
+
+    device = Base()
+    Base.set_level(self=device, level=0.5)
+    with pytest.raises(ValueError, match=r"set_level: level 5\.0 is outside"):
+        Base.set_level(self=device, level=5.0)
+    with pytest.raises(ValueError, match=r"set_level: level 5\.0 is outside"):
+        device.set_level(5.0)

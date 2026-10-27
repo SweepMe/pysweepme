@@ -411,17 +411,19 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
 def _checked(func: F) -> F:
     """Wrap a method so that its arguments are checked against their annotations on every call."""
     signature = _signature(func)
+    receiver = next(iter(signature.parameters), None)  # "self" of a method
     specs: dict[str, ValueSpec] | None = None
 
-    def parameter_specs(args: tuple[Any, ...]) -> dict[str, ValueSpec]:
+    def parameter_specs(bound: inspect.BoundArguments) -> dict[str, ValueSpec]:
         """The value specs of the parameters, resolved at the first call, when the driver module is complete.
 
-        The instance (the first argument of a method) tells which class defines the command, for its class-local
-        aliases.
+        The instance tells which class defines the command, for its class-local aliases. It is taken from the bound
+        arguments, so that a call passing it by keyword (`Base.set_level(self=device, level=5)`) resolves them too.
         """
         nonlocal specs
         if specs is None:
-            localns = _defining_namespace(type(args[0]), func) if args else None
+            instance = bound.arguments.get(receiver) if receiver is not None else None
+            localns = _defining_namespace(type(instance), func) if instance is not None else None
             hints = _hints(func, localns)
             specs = {
                 name: value_spec(hints[name])
@@ -434,9 +436,9 @@ def _checked(func: F) -> F:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the command's own return value
         """Check the given arguments, then call the command."""
-        checks = parameter_specs(args)
+        bound = signature.bind(*args, **kwargs)
+        checks = parameter_specs(bound)
         if checks:
-            bound = signature.bind(*args, **kwargs)
             for name, value in bound.arguments.items():
                 if name in checks:
                     bound.arguments[name] = check_value(func.__name__, name, value, checks[name])
