@@ -690,3 +690,89 @@ def test_the_receiver_passed_by_keyword_resolves_class_local_aliases() -> None:
         Base.set_level(self=device, level=5.0)
     with pytest.raises(ValueError, match=r"set_level: level 5\.0 is outside"):
         device.set_level(5.0)
+
+
+def test_list_elements_are_checked() -> None:
+    """Each element of a list, a variadic tuple or a Sequence is checked and converted; text is no list."""
+    np = pytest.importorskip("numpy")
+
+    class Pins(EmptyDevice):
+        @command
+        def set_pins(self, pins: list[Literal["AIN0", "AIN1"]]) -> None:
+            """Select the pins."""
+            self.pins = pins
+
+        @command
+        def set_levels(self, levels: tuple[Annotated[float, Range(0.0, 5.0)], ...]) -> None:
+            """Set the levels."""
+            self.levels = levels
+
+    device = Pins()
+    device.set_pins(["AIN1", "AIN0"])
+    assert device.pins == ["AIN1", "AIN0"]
+    with pytest.raises(ValueError, match=r"set_pins: pins\[0\] 'AIN9' is not one of AIN0, AIN1\."):
+        device.set_pins(["AIN9"])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="is not a list"):
+        device.set_pins("AIN0,AIN1")  # type: ignore[arg-type]
+    device.set_levels(("1.5", 2))  # type: ignore[arg-type]
+    assert device.levels == (1.5, 2.0)
+    with pytest.raises(ValueError, match=r"levels\[1\] 6\.0 is outside 0\.0 \.\.\. 5\.0"):
+        device.set_levels((1.0, 6.0))
+    array = np.array([1.0, 2.0])
+    device.set_levels(array)
+    assert device.levels is array  # checked, handed on as it is
+    with pytest.raises(ValueError, match="is outside"):
+        device.set_levels(np.array([[1.0, 9.0]]))
+
+
+def test_command_refuses_what_cannot_be_called_by_name() -> None:
+    """Static and class methods, properties, *args/**kwargs and a channel default are refused when loading."""
+    with pytest.raises(TypeError, match="plain instance method"):
+        command(staticmethod(lambda: None))
+    with pytest.raises(TypeError, match="plain instance method"):
+        command(property(lambda _self: 1))  # type: ignore[call-overload]
+    with pytest.raises(TypeError, match=r"\*channels cannot be passed by name"):
+
+        @command
+        def set_mode(self: object, mode: str, *channels: int) -> None:
+            """Set the mode of channels."""
+
+    with pytest.raises(TypeError, match=r"\*\*options cannot be passed by name"):
+
+        @command
+        def configure_all(self: object, **options: float) -> None:
+            """Configure."""
+
+    with pytest.raises(TypeError, match="channel takes no default"):
+
+        @command
+        def set_voltage(self: object, voltage: float, channel: int = 1) -> None:
+            """Set the voltage."""
+
+
+def test_an_override_without_command_is_refused() -> None:
+    """A subclass overriding a command without @command would silently drop it, so creating the class fails."""
+
+    class Base(EmptyDevice):
+        @command
+        def set_level(self, level: float) -> None:
+            """Set the level."""
+
+        def helper(self) -> None:
+            """Not a command."""
+
+    with pytest.raises(TypeError, match=r"overrides the command Base\.set_level without @command"):
+
+        class Child(Base):
+            def set_level(self, level: float) -> None:
+                """Set the level, differently."""
+
+    class Decorated(Base):
+        @command
+        def set_level(self, level: float) -> None:
+            """Set the level, differently."""
+
+        def helper(self) -> None:
+            """Still not a command, and overriding a helper is fine."""
+
+    assert command_info(Decorated.set_level) is not None

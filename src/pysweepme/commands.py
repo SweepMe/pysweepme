@@ -39,6 +39,7 @@ written on the value with standard Python annotations:
 from __future__ import annotations
 
 import ast
+import collections.abc
 import functools
 import inspect
 import math
@@ -169,6 +170,8 @@ class ValueSpec:
     unit: str | None = None
     label: str | None = None
     range: Range | None = None
+    #: For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`).
+    items: ValueSpec | None = None
 
     @property
     def type_name(self) -> str:
@@ -243,10 +246,33 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 unit or inner.unit,
                 label or inner.label,
                 value_range or inner.range,
+                inner.items,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
-    return ValueSpec(None if choices is not None else hint, optional, choices, unit, label, value_range)
+    return ValueSpec(
+        None if choices is not None else hint,
+        optional,
+        choices,
+        unit,
+        label,
+        value_range,
+        _item_spec(hint),
+    )
+
+
+#: The containers whose elements a ValueSpec describes with `items`.
+SEQUENCE_ORIGINS = (list, tuple, collections.abc.Sequence)
+
+
+def _item_spec(hint: Any) -> ValueSpec | None:  # noqa: ANN401  # any annotation object
+    """The spec of each element of `list[X]`, `tuple[X, ...]` or `Sequence[X]`; None for anything else."""
+    if get_origin(hint) not in SEQUENCE_ORIGINS:
+        return None
+    members = get_args(hint)
+    if get_origin(hint) is tuple:
+        return value_spec(members[0]) if len(members) == 2 and members[1] is Ellipsis else None  # noqa: PLR2004
+    return value_spec(members[0]) if len(members) == 1 else None
 
 
 def _defining_namespace(owner: type, func: Callable[..., Any]) -> dict[str, Any] | None:
@@ -379,13 +405,10 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
     """Check and convert one argument against its annotation; raise ValueError if it does not fit."""
     if value is None and spec.optional:
         return None
+    if spec.items is not None:
+        return _check_items(command_name, parameter, value, spec.items)
     if spec.choices is not None:
-        found, choice = _match_choice(value, spec.choices)
-        if not found:
-            allowed = ", ".join(str(c) for c in spec.choices)
-            hint = _near_choice(value, spec.choices)
-            raise _fail(command_name, parameter, value, f"is not one of {allowed}.{hint}")
-        return choice
+        return _check_choice(command_name, parameter, value, spec.choices)
     if spec.type is bool:
         flag = _to_bool(value)
         if flag is None:
@@ -403,6 +426,37 @@ def check_value(command_name: str, parameter: str, value: object, spec: ValueSpe
         unit = f" {spec.unit}" if spec.unit else ""
         raise _fail(command_name, parameter, value, f"is outside {spec.range}{unit}.")
     return value
+
+
+def _check_choice(command_name: str, parameter: str, value: object, choices: tuple[Any, ...]) -> Any:  # noqa: ANN401
+    """The choice a value stands for; a ValueError naming the choices, and the right spelling of a near miss."""
+    found, choice = _match_choice(value, choices)
+    if not found:
+        allowed = ", ".join(str(c) for c in choices)
+        raise _fail(command_name, parameter, value, f"is not one of {allowed}.{_near_choice(value, choices)}")
+    return choice
+
+
+def _checks_something(spec: ValueSpec) -> bool:
+    """Whether check_value would check or convert anything for this spec."""
+    return (
+        spec.choices is not None or spec.type in (bool, int, float) or spec.range is not None or spec.items is not None
+    )
+
+
+def _check_items(command_name: str, parameter: str, value: object, items: ValueSpec) -> Any:  # noqa: ANN401
+    """Check every element of a list argument; a list or tuple comes back converted, a NumPy array as it was."""
+    if isinstance(value, (str, bytes)) or not (isinstance(value, (list, tuple)) or hasattr(value, "tolist")):
+        raise _fail(command_name, parameter, value, "is not a list.")
+    if not _checks_something(items):
+        return value
+    if not isinstance(value, (list, tuple)):
+        flat = value.ravel() if hasattr(value, "ravel") else value  # an array
+        for index, item in enumerate(flat.tolist()):
+            check_value(command_name, f"{parameter}[{index}]", item, items)
+        return value
+    checked = [check_value(command_name, f"{parameter}[{index}]", item, items) for index, item in enumerate(value)]
+    return tuple(checked) if isinstance(value, tuple) else checked
 
 
 # --- @command ----------------------------------------------------------------------------------------------------
@@ -519,6 +573,12 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
 
     def decorate(method: F) -> F:
         """Check the declaration, wrap the method, attach the metadata and show the hazards in the docstring."""
+        if isinstance(method, (staticmethod, classmethod, property)):
+            msg = (
+                f"@command {type(method).__name__}: a command is a plain instance method (def name(self, ...)), "
+                f"called on the driver - not a {type(method).__name__}."
+            )
+            raise TypeError(msg)
         info = _completed(method, declared)
         wrapped = _checked(method)
         setattr(wrapped, COMMAND_ATTRIBUTE, info)
@@ -559,6 +619,20 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     the quantity names of its answer in returns, and a reader reads a measurement unless reads says otherwise.
     """
     name = getattr(method, "__name__", repr(method))
+    for parameter in _signature(method).parameters.values():
+        if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            stars = "*" if parameter.kind is inspect.Parameter.VAR_POSITIONAL else "**"
+            msg = (
+                f"@command {name}: {stars}{parameter.name} cannot be passed by name (an agent or a tile calls "
+                f"commands with named arguments); take a list or named parameters instead."
+            )
+            raise TypeError(msg)
+        if parameter.name in CHANNEL_PARAMETERS and parameter.default is not inspect.Parameter.empty:
+            msg = (
+                f"@command {name}: {parameter.name} takes no default - a call that leaves it out would silently "
+                f"address whichever {parameter.name} the default names."
+            )
+            raise TypeError(msg)
     annotations = _raw_annotations(method)
     if "return" not in annotations:
         msg = f"@command {name}: needs a return annotation, -> None for a setter or an action."
@@ -702,6 +776,25 @@ def hazards_of(cls: type, name: str) -> tuple[str, ...]:
         hazard if origin == name else f"{origin}: {hazard}"
         for origin, hazard in _hazard_origins(cls, name, frozenset({name}))
     )
+
+
+def check_command_overrides(cls: type) -> None:
+    """Refuse a method that overrides a command of a base class without @command: the command would silently vanish.
+
+    Called by EmptyDevice.__init_subclass__, when the driver class is created.
+    """
+    for name, member in vars(cls).items():
+        if name.startswith("_") or command_info(member) is not None:
+            continue
+        for base in cls.__mro__[1:]:
+            if name in vars(base):
+                if command_info(vars(base)[name]) is not None:
+                    msg = (
+                        f"{cls.__name__}.{name} overrides the command {base.__name__}.{name} without @command: "
+                        f"decorate the override too, or it is no command any more."
+                    )
+                    raise TypeError(msg)
+                break
 
 
 def complete_hazard_sections(cls: type) -> None:

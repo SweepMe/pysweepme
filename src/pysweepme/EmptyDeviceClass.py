@@ -51,10 +51,11 @@ class EmptyDevice:
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Complete the docstrings of the driver's composite commands with the hazards they inherit."""
+        """Refuse an override that drops a command, and complete the composites' docstrings with inherited hazards."""
         super().__init_subclass__(**kwargs)
-        from .commands import complete_hazard_sections  # noqa: PLC0415  # commands imports this module
+        from .commands import check_command_overrides, complete_hazard_sections  # noqa: PLC0415  # imports this module
 
+        check_command_overrides(cls)
         complete_hazard_sections(cls)
 
     def __init__(self) -> None:
