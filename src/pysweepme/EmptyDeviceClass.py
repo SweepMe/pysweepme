@@ -57,11 +57,13 @@ class EmptyDevice:
             check_command_overrides,
             check_selector_defaults,
             complete_hazard_sections,
+            prepare_stateful_selectors,
         )
 
         check_command_overrides(cls)
         check_selector_defaults(cls)
         complete_hazard_sections(cls)
+        prepare_stateful_selectors(cls)
 
     def __init__(self) -> None:
         self.variables: list[str] = []
@@ -155,15 +157,29 @@ class EmptyDevice:
 
         return list(set(all_functions) - set(empty_device_functions))
 
-    def apply_selectors(self, **selectors: Any) -> None:
+    def apply_selectors(self, *args: Any, **selectors: Any) -> None:  # any signature may override it
         """Take over the subunit a host binds this driver to: slot=3, channel=2, as the commands take them.
 
         Instrument Control calls it after connect() when a bench entry binds selectors (parameters marked
         Selector()), with the values in the commands' own form. The commands receive the selectors as arguments
         anyway; a driver overrides this only where its own stages - initialize, poweron, poweroff, deinitialize - act
         on one subunit, so that they act on the bound one, e.g. by setting self.channel. The default does nothing.
+
+        For a Selector(stateful=True) it is the one place that selects (INST:OUT2): @command calls it with the
+        stateful selectors that changed before a command needs them, so it must take any subset of them. Every call is
+        remembered on the Port; selecting anywhere else would not be.
         """
-        _ = selectors
+        _ = args, selectors
+
+    def forget_selections(self) -> None:
+        """Forget what the instrument has selected, so that the next command selects again (stateful selectors).
+
+        A driver calls it where the instrument may have lost its selection without apply_selectors - after its own
+        reset, for example.
+        """
+        from .commands import forget_selections  # noqa: PLC0415  # commands imports this module
+
+        forget_selections(self)
 
     def store_parameter(self, key: str, value: object) -> None:
         """Stores a value in the ParameterStore for a given key.

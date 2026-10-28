@@ -130,7 +130,13 @@ class Selector:
     selector is no value: `enable_output(channel: Channel) -> None` runs, and a setter's quantity is its other
     parameter. In a driver using @command only marked parameters are selectors; in a driver without it, a parameter
     named `channel` is the one selector, as before.
+
+    `Selector(stateful=True)` marks a selector the instrument keeps as a selection (`INST:OUT2`, then `VOLT 5`). The
+    driver selects it in `apply_selectors`, and @command calls that only when the selection changes; the selection is
+    remembered on the Port, so every driver instance on it knows it.
     """
+
+    stateful: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,6 +195,8 @@ class ValueSpec:
     items: ValueSpec | None = None
     #: Marked Selector(): the value addresses a part of the instrument.
     selector: bool = False
+    #: Marked Selector(stateful=True): the instrument keeps it as a selection, which @command makes when it changes.
+    stateful: bool = False
 
     @property
     def type_name(self) -> str:
@@ -244,7 +252,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
     """Split an annotation into type, Literal choices and the Unit, Label, Range and Selector markers."""
     unit = label = None
     value_range = None
-    selector = False
+    selector = stateful = False
     if get_origin(hint) is Annotated:
         hint, *metadata = get_args(hint)
         for item in metadata:
@@ -255,7 +263,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
             elif isinstance(item, Range):
                 value_range = item
             elif isinstance(item, Selector):
-                selector = True
+                selector, stateful = True, item.stateful
     optional = False
     if _is_union(hint):
         members = [m for m in get_args(hint) if m is not type(None)]
@@ -271,6 +279,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 value_range or inner.range,
                 inner.items,
                 selector or inner.selector,
+                stateful or inner.stateful,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
@@ -283,6 +292,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         value_range,
         _item_spec(hint),
         selector,
+        stateful,
     )
 
 
@@ -538,6 +548,11 @@ def _checked(func: F) -> F:
             for name, value in bound.arguments.items():
                 if name in checks:
                     bound.arguments[name] = check_value(func.__name__, name, value, checks[name])
+            wanted = {
+                name: value for name, value in bound.arguments.items() if name in checks and checks[name].stateful
+            }
+            if wanted and receiver is not None:
+                _select(bound.arguments[receiver], wanted)
             return func(*bound.args, **bound.kwargs)
         return func(*args, **kwargs)
 
@@ -839,6 +854,137 @@ def check_selector_defaults(cls: type) -> None:
                     f"would silently address whichever {parameter.name} the default names."
                 )
                 raise TypeError(msg)
+
+
+# --- selections kept by the instrument ----------------------------------------------------------------------------
+
+#: The class attribute holding a driver class's stateful selectors, {name: ValueSpec}; set when the class is created.
+STATEFUL_ATTRIBUTE = "_stateful_selectors"
+#: Marks an apply_selectors that remembers what it selected.
+REMEMBERS_ATTRIBUTE = "__pysweepme_remembers_selection__"
+
+
+def stateful_selectors(cls: type) -> dict[str, ValueSpec]:
+    """The selectors the commands of a driver class mark Selector(stateful=True), by name, base classes included."""
+    found: dict[str, ValueSpec] = {}
+    for klass in reversed(cls.__mro__):
+        for member in vars(klass).values():
+            if command_info(member) is None:
+                continue
+            function = inspect.unwrap(member)
+            for name, hint in _hints(function, dict(vars(klass))).items():
+                spec = value_spec(hint)
+                if spec.stateful:
+                    found[name] = spec
+    return found
+
+
+def prepare_stateful_selectors(cls: type) -> None:
+    """Record the class's stateful selectors and make its apply_selectors remember what it selects.
+
+    Called by EmptyDevice.__init_subclass__. A stateful selector the class's apply_selectors cannot take is refused:
+    the selection could never be made.
+    """
+    stateful = stateful_selectors(cls)
+    setattr(cls, STATEFUL_ATTRIBUTE, stateful)
+    if not stateful:
+        return
+    names = ", ".join(sorted(stateful))
+    hook = inspect.getattr_static(cls, "apply_selectors", None)
+    if not callable(hook) or getattr(hook, "__qualname__", "") == "EmptyDevice.apply_selectors":
+        msg = f"{cls.__name__}: the stateful selector(s) {names} need apply_selectors({names}) to select them."
+        raise TypeError(msg)
+    parameters = _signature(hook).parameters
+    takes_any = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    missing = sorted(name for name in stateful if name not in parameters and not takes_any)
+    if missing:
+        msg = (
+            f"{cls.__name__}: the stateful selector(s) {', '.join(missing)} are selected in apply_selectors, which "
+            f"does not take them - define apply_selectors({names}) and select there."
+        )
+        raise TypeError(msg)
+    if not getattr(hook, REMEMBERS_ATTRIBUTE, False):
+        setattr(cls, "apply_selectors", _remembering(hook))  # noqa: B010  # a method replaced on the class
+
+
+def _remembering(hook: Callable[..., Any]) -> Callable[..., Any]:
+    """apply_selectors, remembering the stateful selections it made - or forgetting them all if it failed half way."""
+    signature = _signature(hook)
+
+    @functools.wraps(hook)
+    def apply_selectors(self: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the hook's own result
+        try:
+            result = hook(self, *args, **kwargs)
+        except BaseException:
+            forget_selections(self)
+            raise
+        given: dict[str, Any] = {}
+        for name, value in signature.bind(self, *args, **kwargs).arguments.items():
+            if signature.parameters[name].kind is inspect.Parameter.VAR_KEYWORD:
+                given.update(value)
+            else:
+                given[name] = value
+        stateful = getattr(type(self), STATEFUL_ATTRIBUTE, {})
+        made = {
+            name: check_value("apply_selectors", name, value, stateful[name])
+            for name, value in given.items()
+            if name in stateful
+        }
+        if made:
+            _remember(self, made)
+        return result
+
+    setattr(apply_selectors, REMEMBERS_ATTRIBUTE, True)
+    return apply_selectors
+
+
+def _owner(device: Any) -> str:  # noqa: ANN401  # any driver instance
+    """Who made a selection: the driver's file and class - another driver on the same port means another meaning."""
+    cls = type(device)
+    module = sys.modules.get(cls.__module__)
+    return f"{getattr(module, '__file__', '') or cls.__module__}:{cls.__qualname__}"
+
+
+def _holder(device: Any) -> Any:  # noqa: ANN401  # a Port, or the driver instance itself
+    """Where the selection is kept: the Port, shared by every instance on the resource; without one the instance."""
+    port = getattr(device, "port", None)
+    return port if port is not None and callable(getattr(port, "remember_selection", None)) else device
+
+
+def current_selection(device: Any) -> dict[str, Any]:  # noqa: ANN401  # any driver instance
+    """What the instrument has selected, as far as this driver knows: {} when unknown or selected by another driver."""
+    holder = _holder(device)
+    if holder is device:
+        record = getattr(device, "_selection", None)
+        return dict(record[1]) if record and record[0] == _owner(device) else {}
+    selection: dict[str, Any] = holder.selection(_owner(device))
+    return selection
+
+
+def _remember(device: Any, values: dict[str, Any]) -> None:  # noqa: ANN401  # any driver instance
+    holder = _holder(device)
+    if holder is device:
+        known = current_selection(device)
+        device._selection = (_owner(device), {**known, **values})  # noqa: SLF001  # the memory of a portless driver
+    else:
+        holder.remember_selection(_owner(device), values)
+
+
+def forget_selections(device: Any) -> None:  # noqa: ANN401  # any driver instance
+    """Forget what the instrument has selected: the next command selects again."""
+    holder = _holder(device)
+    if holder is device:
+        device._selection = None  # noqa: SLF001  # the memory of a portless driver
+    else:
+        holder.forget_selections()
+
+
+def _select(device: Any, wanted: dict[str, Any]) -> None:  # noqa: ANN401  # any driver instance
+    """Have the driver select what a command needs, unless the instrument has it selected already."""
+    current = current_selection(device)
+    changed = {name: value for name, value in wanted.items() if name not in current or current[name] != value}
+    if changed:
+        device.apply_selectors(**changed)
 
 
 def check_command_overrides(cls: type) -> None:

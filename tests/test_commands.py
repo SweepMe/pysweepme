@@ -13,6 +13,7 @@ import pytest
 from pysweepme import Label, Range, Selector, Unit, command, describe_commands
 from pysweepme.commands import COMMAND_ATTRIBUTE, CommandInfo, command_info, derived_label, description_of
 from pysweepme.EmptyDeviceClass import EmptyDevice
+from pysweepme.Ports import Port
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,6 +27,7 @@ SourceMode = Literal["FVMI", "FIMV"]
 Channel = Annotated[int, Selector()]
 Slot = Annotated[int, Selector(), Range(1, 8)]
 Pin = Annotated[Literal["FIO0", "FIO1"], Selector()]
+Output = Annotated[int, Selector(stateful=True), Range(1, 4)]
 
 
 class Declared(EmptyDevice):
@@ -917,3 +919,168 @@ def test_a_selector_takes_no_default() -> None:
             """A default on a value is fine."""
 
     assert spec_of(Plain(), "set_voltage").selectors == ()
+
+
+# --- stateful selectors ----------------------------------------------------------------------------------------------
+
+
+class Selecting(EmptyDevice):
+    """An instrument that keeps its output selected (INST:OUT<n>) and takes the voltage without the output."""
+
+    def __init__(self) -> None:
+        """Remember what was sent."""
+        super().__init__()
+        self.sent: list[str] = []
+
+    def apply_selectors(self, output: int) -> None:
+        """Select the output the next commands act on."""
+        self.sent.append(f"INST:OUT{output}")
+
+    @command
+    def set_voltage(self, output: Output, voltage: Volts) -> None:  # noqa: ARG002  # selected by apply_selectors
+        """Set the voltage of one output."""
+        self.sent.append(f"VOLT {voltage}")
+
+    @command(returns=("identification",))
+    def get_identification(self) -> str:
+        """No output involved."""
+        return "NGx"
+
+
+class OtherSelecting(Selecting):
+    """Another driver on the same port: its selection means something else to this one."""
+
+
+def shared_port() -> Port:
+    """A Port without a resource behind it - the memory needs none."""
+    port = Port.__new__(Port)
+    port.port_properties = {}
+    return port
+
+
+def test_a_stateful_selection_is_sent_only_when_it_changes() -> None:
+    """One output used: one INST:OUT at the first command; a change of output selects again."""
+    device = Selecting()
+    device.port = shared_port()
+    device.set_voltage(1, 2.0)
+    device.set_voltage(1, 3.0)
+    device.get_identification()
+    device.set_voltage(output="2", voltage=1.0)  # type: ignore[arg-type]  # @command converts it
+    assert device.sent == ["INST:OUT1", "VOLT 2.0", "VOLT 3.0", "INST:OUT2", "VOLT 1.0"]
+
+
+def test_instances_on_one_port_share_the_selection() -> None:
+    """Two bench entries on output 1 and 2: each selects again after the other did, never trusting its own memory."""
+    port = shared_port()
+    first, second = Selecting(), Selecting()
+    first.port = second.port = port
+    first.set_voltage(1, 1.0)
+    second.set_voltage(2, 2.0)
+    first.set_voltage(1, 1.5)
+    second.set_voltage(2, 2.5)
+    assert first.sent == ["INST:OUT1", "VOLT 1.0", "INST:OUT1", "VOLT 1.5"]
+    assert second.sent == ["INST:OUT2", "VOLT 2.0", "INST:OUT2", "VOLT 2.5"]
+    third = Selecting()
+    third.port = port
+    third.set_voltage(2, 0.5)
+    assert third.sent == ["VOLT 0.5"]  # the instrument has output 2 selected, whoever selected it
+
+
+def test_a_selection_by_another_driver_is_unknown() -> None:
+    """Another driver class on the same port may mean something else by its selection: select again."""
+    port = shared_port()
+    mine, other = Selecting(), OtherSelecting()
+    mine.port = other.port = port
+    mine.set_voltage(1, 1.0)
+    other.set_voltage(1, 1.0)
+    assert other.sent == ["INST:OUT1", "VOLT 1.0"]
+
+
+def test_unknown_means_select_again() -> None:
+    """Forgotten after raw traffic, on open and close, by the driver's own reset - and after a failed selection."""
+    device = Selecting()
+    device.port = port = shared_port()
+    device.set_voltage(1, 1.0)
+    for forget in (port.forget_selections, port.open, port.close, device.forget_selections):
+        device.sent.clear()
+        forget()
+        device.set_voltage(1, 1.0)
+        assert device.sent == ["INST:OUT1", "VOLT 1.0"], forget
+    assert port.selection("someone else") == {}
+
+
+def test_a_failed_selection_is_forgotten() -> None:
+    """A selection that raised may have half happened: nothing is remembered, the next command selects again."""
+
+    class Failing(Selecting):
+        fail = True
+
+        def apply_selectors(self, output: int) -> None:
+            """Fail once."""
+            if self.fail:
+                self.fail = False
+                msg = "timeout"
+                raise TimeoutError(msg)
+            super().apply_selectors(output)
+
+    device = Failing()
+    device.port = shared_port()
+    with pytest.raises(TimeoutError):
+        device.set_voltage(1, 1.0)
+    device.set_voltage(1, 1.0)
+    assert device.sent == ["INST:OUT1", "VOLT 1.0"]
+
+
+def test_every_selection_is_remembered() -> None:
+    """A selection by a semantic function or a host (apply_selectors called directly) is known to the commands."""
+    device = Selecting()
+    device.port = shared_port()
+    device.apply_selectors(output=3)
+    device.set_voltage(3, 1.0)
+    assert device.sent == ["INST:OUT3", "VOLT 1.0"]
+
+
+def test_a_driver_without_port_remembers_on_itself() -> None:
+    """No Port (a simulation, an SDK): the memory is the instance's."""
+    device = Selecting()
+    device.set_voltage(4, 1.0)
+    device.set_voltage(4, 2.0)
+    assert device.sent == ["INST:OUT4", "VOLT 1.0", "VOLT 2.0"]
+
+
+def test_a_stateful_selector_needs_apply_selectors_taking_it() -> None:
+    """Refused when the class is created: without apply_selectors, or with one not taking it, nothing could select."""
+    with pytest.raises(TypeError, match=r"need apply_selectors\(output\)"):
+
+        class NoHook(EmptyDevice):
+            @command
+            def set_voltage(self, output: Output, voltage: float) -> None:
+                """Set the voltage."""
+
+    with pytest.raises(TypeError, match="does not take them"):
+
+        class WrongHook(EmptyDevice):
+            def apply_selectors(self, channel: int) -> None:
+                """Takes another selector."""
+
+            @command
+            def set_voltage(self, output: Output, voltage: float) -> None:
+                """Set the voltage."""
+
+    class AnyHook(EmptyDevice):
+        def apply_selectors(self, **selectors: object) -> None:
+            """Takes whatever is selected."""
+
+        @command
+        def set_voltage(self, output: Output, voltage: float) -> None:
+            """Set the voltage."""
+
+    assert AnyHook.apply_selectors is not EmptyDevice.apply_selectors
+
+
+def test_a_plain_selector_selects_nothing() -> None:
+    """A selector the instrument takes in every command (Selector() without stateful) never calls apply_selectors."""
+    device = Declared()
+    device.apply_selectors = lambda **_: pytest.fail("selected")  # type: ignore[method-assign]
+    device.set_voltage(1, 2.0)
+    assert device.calls == [("set_voltage", (1, 2.0))]
