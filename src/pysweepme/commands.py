@@ -122,7 +122,7 @@ class Label:
     text: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Selector:
     """Marks a parameter that addresses a part of the instrument - a channel, a slot, a pin - rather than a value.
 
@@ -134,6 +134,8 @@ class Selector:
     `Selector(stateful=True)` marks a selector the instrument keeps as a selection (`INST:OUT2`, then `VOLT 5`). The
     driver selects it in `apply_selectors`, and @command calls that only when the selection changes; the selection is
     remembered on the Port, so every driver instance on it knows it.
+
+    Its options are keyword-only, so that one added later cannot shift the meaning of an existing driver's call.
     """
 
     stateful: bool = False
@@ -167,9 +169,9 @@ class Range:
         return f"{low}...{high}"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CommandInfo:
-    """What @command declares about a command as a whole."""
+    """What @command declares about a command as a whole (keyword-only, like every spec here: fields can be added)."""
 
     returns: tuple[str, ...] | None = None
     reads: str | None = None
@@ -181,7 +183,7 @@ class CommandInfo:
     kind: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ValueSpec:
     """Everything the annotation says about one value: type, choices, unit, label and range."""
 
@@ -206,7 +208,7 @@ class ValueSpec:
         return getattr(self.type, "__name__", "") if self.type is not None else ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ParameterSpec:
     """One parameter of a command."""
 
@@ -218,7 +220,7 @@ class ParameterSpec:
     selector: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CommandSpec:
     """One communication command as SweepMe!, Instrument Control and scripts see it."""
 
@@ -271,28 +273,28 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         if len(members) == 1:
             inner = value_spec(members[0])
             return ValueSpec(
-                inner.type,
-                optional,
-                inner.choices,
-                unit or inner.unit,
-                label or inner.label,
-                value_range or inner.range,
-                inner.items,
-                selector or inner.selector,
-                stateful or inner.stateful,
+                type=inner.type,
+                optional=optional,
+                choices=inner.choices,
+                unit=unit or inner.unit,
+                label=label or inner.label,
+                range=value_range or inner.range,
+                items=inner.items,
+                selector=selector or inner.selector,
+                stateful=stateful or inner.stateful,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
     return ValueSpec(
-        None if choices is not None else hint,
-        optional,
-        choices,
-        unit,
-        label,
-        value_range,
-        _item_spec(hint),
-        selector,
-        stateful,
+        type=None if choices is not None else hint,
+        optional=optional,
+        choices=choices,
+        unit=unit,
+        label=label,
+        range=value_range,
+        items=_item_spec(hint),
+        selector=selector,
+        stateful=stateful,
     )
 
 
@@ -607,6 +609,9 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
 
     Returns:
         The wrapped method, or a decorator when called with arguments.
+
+    Every argument is keyword-only with a default that means "not declared": one added later keeps today's behavior
+    for the drivers that do not use it.
     """
     if isinstance(returns, str):
         msg = f"@command returns must be a sequence of quantity names, e.g. ({returns!r},), not a string."
@@ -621,11 +626,11 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         )
         raise ValueError(msg)
     declared = CommandInfo(
-        tuple(returns) if returns is not None else None,
-        reads,
-        bool(composite),
-        _hazards(hazards),
-        kind or "",
+        returns=tuple(returns) if returns is not None else None,
+        reads=reads,
+        composite=bool(composite),
+        hazards=_hazards(hazards),
+        kind=kind or "",
     )
 
     def decorate(method: F) -> F:
@@ -985,6 +990,15 @@ def _select(device: Any, wanted: dict[str, Any]) -> None:  # noqa: ANN401  # any
     changed = {name: value for name, value in wanted.items() if name not in current or current[name] != value}
     if changed:
         device.apply_selectors(**changed)
+
+
+def declares_commands(cls: type) -> bool:
+    """Whether the class or one of its bases has a method decorated with @command.
+
+    EmptyDevice.__init_subclass__ runs the checks of a declared driver only where this is true, so a driver without
+    @command - most drivers - is created exactly as before, whatever checks are added later.
+    """
+    return any(command_info(member) is not None for klass in cls.__mro__ for member in vars(klass).values())
 
 
 def check_command_overrides(cls: type) -> None:

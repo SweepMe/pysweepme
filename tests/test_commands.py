@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import inspect
 import sys
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
 
-from pysweepme import Label, Range, Selector, Unit, command, describe_commands
+from pysweepme import Label, Range, Selector, Unit, command, commands, describe_commands
 from pysweepme.commands import COMMAND_ATTRIBUTE, CommandInfo, command_info, derived_label, description_of
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.Ports import Port
@@ -163,7 +164,11 @@ def test_command_keeps_the_method() -> None:
     assert method.__doc__ == "Set the output voltage."
     assert list(inspect.signature(method).parameters) == ["self", "channel", "voltage"]
     assert command_info(method) == CommandInfo()
-    assert getattr(Declared.get_level, COMMAND_ATTRIBUTE) == CommandInfo(("voltage",), "setpoint", kind="read")
+    assert getattr(Declared.get_level, COMMAND_ATTRIBUTE) == CommandInfo(
+        returns=("voltage",),
+        reads="setpoint",
+        kind="read",
+    )
     assert command_info(Declared.helper) is None
 
 
@@ -260,7 +265,11 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
     sys.modules["forward_driver"] = module
     try:
         spec.loader.exec_module(module)
-        assert command_info(module.Device.get_reading) == CommandInfo(("reading",), "measurement", kind="read")
+        assert command_info(module.Device.get_reading) == CommandInfo(
+            returns=("reading",),
+            reads="measurement",
+            kind="read",
+        )
     finally:
         del sys.modules["forward_driver"]
 
@@ -1084,3 +1093,52 @@ def test_a_plain_selector_selects_nothing() -> None:
     device.apply_selectors = lambda **_: pytest.fail("selected")  # type: ignore[method-assign]
     device.set_voltage(1, 2.0)
     assert device.calls == [("set_voltage", (1, 2.0))]
+
+
+# --- extending @command without breaking the drivers written before ------------------------------------------------
+
+
+def test_every_command_argument_is_keyword_only_with_a_default() -> None:
+    """A new @command argument cannot shift an old one, and a driver that does not use it keeps working."""
+    parameters = list(inspect.signature(command).parameters.values())
+    assert parameters[0].kind is inspect.Parameter.POSITIONAL_ONLY  # the method, when used bare
+    assert all(
+        p.kind is inspect.Parameter.KEYWORD_ONLY and p.default is not inspect.Parameter.empty for p in parameters[1:]
+    )
+
+
+def test_marker_options_and_specs_are_keyword_only() -> None:
+    """Selector's options and every spec class take keywords only: a field added later shifts no existing call."""
+    assert Selector(stateful=True).stateful
+    with pytest.raises(TypeError):
+        Selector(True)  # type: ignore[misc]  # noqa: FBT003  # positional on purpose
+    for spec in (commands.CommandInfo, commands.ValueSpec, commands.ParameterSpec, commands.CommandSpec):
+        assert all(item.kw_only for item in dataclasses.fields(spec)), spec.__name__
+
+
+def test_unknown_annotation_metadata_is_ignored() -> None:
+    """A marker pysweepme does not know (from a later version, or another library) leaves the known ones intact."""
+    spec = commands.value_spec(Annotated[float, Unit("V"), "a note", object(), Range(0, 5)])
+    assert (spec.type, spec.unit, spec.range) == (float, "V", Range(0, 5))
+
+
+def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The checks of declared drivers never run for one without @command, so a check added later cannot break it."""
+
+    def refuse(cls: type) -> None:
+        pytest.fail(f"{cls.__name__} was checked")
+
+    for check in (
+        "check_command_overrides",
+        "check_selector_defaults",
+        "complete_hazard_sections",
+        "prepare_stateful_selectors",
+    ):
+        monkeypatch.setattr(commands, check, refuse)
+
+    class Undeclared(EmptyDevice):
+        def set_voltage(self, channel: int = 1, voltage: float = 0.0) -> None:
+            """A selector default is refused in a declared driver, not here."""
+
+    assert not commands.declares_commands(Undeclared)
+    assert commands.declares_commands(Declared)

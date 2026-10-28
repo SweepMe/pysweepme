@@ -57,9 +57,13 @@ class EmptyDevice:
             check_command_overrides,
             check_selector_defaults,
             complete_hazard_sections,
+            declares_commands,
             prepare_stateful_selectors,
         )
 
+        # A driver without @command is not checked at all: a check added later cannot keep it from loading
+        if not declares_commands(cls):
+            return
         check_command_overrides(cls)
         check_selector_defaults(cls)
         complete_hazard_sections(cls)
