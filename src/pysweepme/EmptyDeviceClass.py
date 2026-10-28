@@ -51,11 +51,16 @@ class EmptyDevice:
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Refuse an override that drops a command, and complete the composites' docstrings with inherited hazards."""
+        """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
         super().__init_subclass__(**kwargs)
-        from .commands import check_command_overrides, complete_hazard_sections  # noqa: PLC0415  # imports this module
+        from .commands import (  # noqa: PLC0415  # commands imports this module
+            check_command_overrides,
+            check_selector_defaults,
+            complete_hazard_sections,
+        )
 
         check_command_overrides(cls)
+        check_selector_defaults(cls)
         complete_hazard_sections(cls)
 
     def __init__(self) -> None:
@@ -149,6 +154,16 @@ class EmptyDevice:
         empty_device_functions = [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
 
         return list(set(all_functions) - set(empty_device_functions))
+
+    def apply_selectors(self, **selectors: Any) -> None:
+        """Take over the subunit a host binds this driver to: slot=3, channel=2, as the commands take them.
+
+        Instrument Control calls it after connect() when a bench entry binds selectors (parameters marked
+        Selector()), with the values in the commands' own form. The commands receive the selectors as arguments
+        anyway; a driver overrides this only where its own stages - initialize, poweron, poweroff, deinitialize - act
+        on one subunit, so that they act on the bound one, e.g. by setting self.channel. The default does nothing.
+        """
+        _ = selectors
 
     def store_parameter(self, key: str, value: object) -> None:
         """Stores a value in the ParameterStore for a given key.

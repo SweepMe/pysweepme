@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
 
-from pysweepme import Label, Range, Unit, command, describe_commands
+from pysweepme import Label, Range, Selector, Unit, command, describe_commands
 from pysweepme.commands import COMMAND_ATTRIBUTE, CommandInfo, command_info, derived_label, description_of
 from pysweepme.EmptyDeviceClass import EmptyDevice
 
@@ -23,6 +23,9 @@ Volts = Annotated[float, Unit("V")]
 Amperes = Annotated[float, Unit("A")]
 RfPower = Annotated[float, Unit("dBm"), Label("RF power")]
 SourceMode = Literal["FVMI", "FIMV"]
+Channel = Annotated[int, Selector()]
+Slot = Annotated[int, Selector(), Range(1, 8)]
+Pin = Annotated[Literal["FIO0", "FIO1"], Selector()]
 
 
 class Declared(EmptyDevice):
@@ -34,37 +37,37 @@ class Declared(EmptyDevice):
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     @command
-    def set_voltage(self, channel: int, voltage: Annotated[Volts, Range(-20.0, 20.0)]) -> None:
+    def set_voltage(self, channel: Channel, voltage: Annotated[Volts, Range(-20.0, 20.0)]) -> None:
         """Set the output voltage."""
         self.calls.append(("set_voltage", (channel, voltage)))
 
     @command(hazards="FIMV with no load drives the output to compliance.")
-    def set_source_mode(self, channel: int, mode: SourceMode) -> None:
+    def set_source_mode(self, channel: Channel, mode: SourceMode) -> None:
         """Set the source mode."""
         self.calls.append(("set_source_mode", (channel, mode)))
 
     @command
-    def set_output(self, channel: int, state: bool) -> None:  # noqa: FBT001  # a command takes its value positionally
+    def set_output(self, channel: Channel, state: bool) -> None:  # noqa: FBT001  # the value, positionally
         """Switch the output."""
         self.calls.append(("set_output", (channel, state)))
 
     @command
-    def set_points(self, channel: int, points: Annotated[int, Range(1, None)]) -> None:
+    def set_points(self, channel: Channel, points: Annotated[int, Range(1, None)]) -> None:
         """Set the number of points."""
         self.calls.append(("set_points", (channel, points)))
 
     @command
-    def set_offset(self, channel: int, offset: float | None = None) -> None:
+    def set_offset(self, channel: Channel, offset: float | None = None) -> None:
         """Set an offset, or none."""
         self.calls.append(("set_offset", (channel, offset)))
 
     @command(returns=("voltage", "current"))
-    def get_voltage_and_current(self, channel: int) -> tuple[Volts, Amperes]:  # noqa: ARG002  # a test stub
+    def get_voltage_and_current(self, channel: Channel) -> tuple[Volts, Amperes]:  # noqa: ARG002  # a test stub
         """Measure voltage and current."""
         return (1.0, 0.001)
 
     @command(returns=("voltage",), reads="setpoint")
-    def get_level(self, channel: int) -> Volts:  # noqa: ARG002  # a test stub
+    def get_level(self, channel: Channel) -> Volts:  # noqa: ARG002  # a test stub
         """Read back the voltage setpoint."""
         return 1.0
 
@@ -74,7 +77,7 @@ class Declared(EmptyDevice):
         return -10.0
 
     @command(returns=("current",), reads="last")
-    def fetch_current(self, channel: int) -> Amperes:  # noqa: ARG002  # a test stub
+    def fetch_current(self, channel: Channel) -> Amperes:  # noqa: ARG002  # a test stub
         """Return the last measured current."""
         return 0.001
 
@@ -89,7 +92,7 @@ class Declared(EmptyDevice):
         return 21.0
 
     @command(composite=True)
-    def sweep_voltage(self, channel: int, start: Volts, stop: Volts) -> None:
+    def sweep_voltage(self, channel: Channel, start: Volts, stop: Volts) -> None:
         """Sweep the voltage from start to stop."""
 
     @command(
@@ -157,7 +160,7 @@ def test_command_keeps_the_method() -> None:
     assert method.__name__ == "set_voltage"
     assert method.__doc__ == "Set the output voltage."
     assert list(inspect.signature(method).parameters) == ["self", "channel", "voltage"]
-    assert command_info(method) == CommandInfo(kind="set")
+    assert command_info(method) == CommandInfo()
     assert getattr(Declared.get_level, COMMAND_ATTRIBUTE) == CommandInfo(("voltage",), "setpoint", kind="read")
     assert command_info(Declared.helper) is None
 
@@ -176,7 +179,6 @@ def test_hazards_are_metadata_and_shown_by_help() -> None:
     """Hazards are stored as a tuple of texts and appended to the docstring as a Hazards section."""
     assert command_info(Declared.set_source_mode) == CommandInfo(
         hazards=("FIMV with no load drives the output to compliance.",),
-        kind="set",
     )
     assert inspect.getdoc(Declared.reset) == (
         "Reset the instrument.\n\nA longer explanation of the reset.\n\nHazards:\n"
@@ -189,7 +191,7 @@ def test_hazards_are_metadata_and_shown_by_help() -> None:
     def undocumented() -> None:
         pass
 
-    assert command_info(undocumented) == CommandInfo(hazards=("A text wrapped over lines.",), kind="run")
+    assert command_info(undocumented) == CommandInfo(hazards=("A text wrapped over lines.",))
     assert undocumented.__doc__ == "Hazards:\n    A text wrapped over lines."
 
 
@@ -517,7 +519,8 @@ def test_kinds_quantities_and_reads() -> None:
     setter = spec_of(device, "set_voltage")
     assert setter.kind == "set"
     assert setter.quantity == "voltage"
-    assert [p.name for p in setter.parameters if p.is_channel] == ["channel"]
+    assert [p.name for p in setter.parameters if p.selector] == ["channel"]
+    assert setter.selectors == ("channel",)
     voltage = next(p for p in setter.parameters if p.name == "voltage")
     assert (voltage.value.type, voltage.value.unit, voltage.value.range) == (float, "V", Range(-20.0, 20.0))
     assert setter.labels == {"voltage": "Voltage"}
@@ -743,12 +746,6 @@ def test_command_refuses_what_cannot_be_called_by_name() -> None:
         def configure_all(self: object, **options: float) -> None:
             """Configure."""
 
-    with pytest.raises(TypeError, match="channel takes no default"):
-
-        @command
-        def set_voltage(self: object, voltage: float, channel: int = 1) -> None:
-            """Set the voltage."""
-
 
 def test_an_override_without_command_is_refused() -> None:
     """A subclass overriding a command without @command would silently drop it, so creating the class fails."""
@@ -827,3 +824,96 @@ def test_a_positional_only_parameter_is_refused() -> None:
         """Set the offset."""
 
     assert command_info(set_offset) is not None
+
+
+# --- selectors -----------------------------------------------------------------------------------------------------
+
+
+def test_a_selector_is_no_value() -> None:
+    """A Selector-marked parameter addresses a subunit: the kind and the quantity come from the other parameters."""
+
+    class Mainframe(EmptyDevice):
+        @command
+        def enable_output(self, slot: Slot, channel: Channel) -> None:
+            """Switch the output of a channel on."""
+
+        @command
+        def set_voltage(self, slot: Slot, channel: Channel, voltage: Volts) -> None:
+            """Set the voltage of a channel."""
+
+        @command
+        def set_digital_output(self, pin: Pin, state: bool) -> None:  # noqa: FBT001  # the value, positionally
+            """Set a digital output."""
+            self.state = (pin, state)
+
+        @command(returns=("voltage",))
+        def get_voltage(self, slot: Slot, channel: Channel) -> Volts:  # noqa: ARG002  # a test stub
+            """Measure the voltage of a channel."""
+            return 1.0
+
+    device = Mainframe()
+    run = spec_of(device, "enable_output")
+    assert (run.kind, run.selectors, run.quantity) == ("run", ("slot", "channel"), None)
+    setter = spec_of(device, "set_voltage")
+    assert (setter.kind, setter.selectors, setter.quantity) == ("set", ("slot", "channel"), "voltage")
+    assert setter.labels == {"voltage": "Voltage"}
+    digital = spec_of(device, "set_digital_output")
+    assert (digital.kind, digital.selectors, digital.quantity) == ("set", ("pin",), "state")
+    assert spec_of(device, "get_voltage").selectors == ("slot", "channel")
+    slot = next(p for p in setter.parameters if p.name == "slot")
+    assert (slot.selector, slot.value.range) == (True, Range(1, 8))
+    with pytest.raises(ValueError, match=r"set_voltage: slot 9 is outside 1 \.\.\. 8\."):
+        device.set_voltage(9, 1, 1.0)
+    with pytest.raises(ValueError, match="pin 'FIO7' is not one of FIO0, FIO1"):
+        device.set_digital_output("FIO7", True)  # type: ignore[arg-type]  # noqa: FBT003
+
+
+def test_channel_is_a_selector_by_name_only_without_command() -> None:
+    """Without @command a parameter named channel is the selector; with it, an unmarked channel is a plain value."""
+
+    class Undeclared(EmptyDevice):
+        def set_voltage(self, channel: int, voltage: float) -> None:
+            """Set the voltage."""
+
+    class Unmarked(EmptyDevice):
+        @command
+        def set_voltage(self, channel: int, voltage: float) -> None:
+            """Set the voltage."""
+
+    undeclared = spec_of(Undeclared(), "set_voltage")
+    assert (undeclared.selectors, undeclared.quantity) == (("channel",), "voltage")
+    unmarked = spec_of(Unmarked(), "set_voltage")
+    assert (unmarked.selectors, unmarked.kind, unmarked.quantity) == ((), "set", None)
+
+
+def test_a_class_local_selector_alias_is_recognised() -> None:
+    """A selector alias in the class body resolves once the class exists, for kind and checks alike."""
+
+    class Local(EmptyDevice):
+        Output = Annotated[int, Selector(), Range(1, 2)]
+
+        @command
+        def enable(self, output: Output) -> None:
+            """Enable an output."""
+
+    spec = spec_of(Local(), "enable")
+    assert (spec.kind, spec.selectors) == ("run", ("output",))
+    with pytest.raises(ValueError, match="output 3 is outside"):
+        Local().enable(3)
+
+
+def test_a_selector_takes_no_default() -> None:
+    """A default on a selector is refused when the class is created: leaving it out would address the default."""
+    with pytest.raises(TypeError, match="the selector channel takes no default"):
+
+        class Defaulted(EmptyDevice):
+            @command
+            def set_voltage(self, voltage: float, channel: Channel = 1) -> None:
+                """Set the voltage."""
+
+    class Plain(EmptyDevice):
+        @command
+        def set_voltage(self, voltage: float, delay: float = 0.0) -> None:
+            """A default on a value is fine."""
+
+    assert spec_of(Plain(), "set_voltage").selectors == ()

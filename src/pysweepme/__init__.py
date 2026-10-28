@@ -41,7 +41,7 @@ if sys.platform == "win32":
     from . import WinFolder
 
 from ._utils import load_source
-from .commands import Label, Range, Unit, command, describe_commands
+from .commands import Label, Range, Selector, Unit, command, describe_commands
 from .DeviceManager import get_driver
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import debug, error
@@ -68,6 +68,7 @@ __all__ = [
     "PortManager",
     "Ports",
     "Range",
+    "Selector",
     "Unit",
     "WinFolder",
     "addFolderToPATH",

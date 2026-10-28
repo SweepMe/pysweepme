@@ -78,6 +78,7 @@ __all__ = [
     "Label",
     "ParameterSpec",
     "Range",
+    "Selector",
     "Unit",
     "ValueSpec",
     "command",
@@ -122,6 +123,17 @@ class Label:
 
 
 @dataclass(frozen=True)
+class Selector:
+    """Marks a parameter that addresses a part of the instrument - a channel, a slot, a pin - rather than a value.
+
+    Written on the parameter's alias like the other markers: `Channel = Annotated[int, Selector(), Range(1, 2)]`. A
+    selector is no value: `enable_output(channel: Channel) -> None` runs, and a setter's quantity is its other
+    parameter. In a driver using @command only marked parameters are selectors; in a driver without it, a parameter
+    named `channel` is the one selector, as before.
+    """
+
+
+@dataclass(frozen=True)
 class Range:
     """Inclusive bounds the instrument accepts for a parameter; None is an open side."""
 
@@ -157,7 +169,10 @@ class CommandInfo:
     reads: str | None = None
     composite: bool = False
     hazards: tuple[str, ...] = ()
-    kind: str = ""  # "read", "set" or "run": derived from the signature when decorated, unless kind="run" was given
+    #: "read" (a return annotation other than None) or "run" (stated with kind="run") when decorated; "" otherwise:
+    #: set or run then follows from whether a value parameter remains besides the selectors, which are only known
+    #: once their aliases resolve - describe_command decides it.
+    kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -172,6 +187,8 @@ class ValueSpec:
     range: Range | None = None
     #: For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`).
     items: ValueSpec | None = None
+    #: Marked Selector(): the value addresses a part of the instrument.
+    selector: bool = False
 
     @property
     def type_name(self) -> str:
@@ -189,7 +206,8 @@ class ParameterSpec:
     value: ValueSpec
     required: bool
     default: Any = None
-    is_channel: bool = False
+    #: It addresses a part of the instrument (Selector(); in a driver without @command a parameter named channel).
+    selector: bool = False
 
 
 @dataclass(frozen=True)
@@ -210,6 +228,8 @@ class CommandSpec:
     labels: dict[str, str] = field(default_factory=dict)
     #: For a composite: the commands it calls, read from its code (hazards then holds theirs as well).
     calls: tuple[str, ...] = ()
+    #: The names of the parameters that are selectors, in signature order.
+    selectors: tuple[str, ...] = ()
 
 
 # --- annotations -------------------------------------------------------------------------------------------------
@@ -221,9 +241,10 @@ def _is_union(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
 
 
 def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
-    """Split an annotation into type, Literal choices and the Unit, Label and Range markers."""
+    """Split an annotation into type, Literal choices and the Unit, Label, Range and Selector markers."""
     unit = label = None
     value_range = None
+    selector = False
     if get_origin(hint) is Annotated:
         hint, *metadata = get_args(hint)
         for item in metadata:
@@ -233,6 +254,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label = item.text
             elif isinstance(item, Range):
                 value_range = item
+            elif isinstance(item, Selector):
+                selector = True
     optional = False
     if _is_union(hint):
         members = [m for m in get_args(hint) if m is not type(None)]
@@ -247,6 +270,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label or inner.label,
                 value_range or inner.range,
                 inner.items,
+                selector or inner.selector,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
@@ -258,6 +282,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         label,
         value_range,
         _item_spec(hint),
+        selector,
     )
 
 
@@ -630,7 +655,7 @@ def _is_none_annotation(annotation: object) -> bool:
 
 
 def _check_parameters(name: str, method: Callable[..., Any]) -> None:
-    """Refuse parameters a call by name cannot fill: positional-only ones, *args/**kwargs, a channel default."""
+    """Refuse parameters a call by name cannot fill: positional-only ones and *args/**kwargs."""
     for index, parameter in enumerate(_signature(method).parameters.values()):
         if parameter.kind is inspect.Parameter.POSITIONAL_ONLY and index > 0:
             msg = (
@@ -643,12 +668,6 @@ def _check_parameters(name: str, method: Callable[..., Any]) -> None:
             msg = (
                 f"@command {name}: {stars}{parameter.name} cannot be passed by name (an agent or a tile calls "
                 f"commands with named arguments); take a list or named parameters instead."
-            )
-            raise TypeError(msg)
-        if parameter.name in CHANNEL_PARAMETERS and parameter.default is not inspect.Parameter.empty:
-            msg = (
-                f"@command {name}: {parameter.name} takes no default - a call that leaves it out would silently "
-                f"address whichever {parameter.name} the default names."
             )
             raise TypeError(msg)
 
@@ -680,16 +699,7 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
         raise TypeError(msg)
     if reader:
         return replace(declared, kind="read", reads=declared.reads or "measurement")
-    if declared.kind:
-        return declared
-    parameters = _signature(method).parameters.values()
-    takes_value = any(
-        p.name != "self"
-        and p.name not in CHANNEL_PARAMETERS
-        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        for p in parameters
-    )
-    return replace(declared, kind="set" if takes_value else "run")
+    return declared  # kind "run" if stated, else set or run by its parameters, decided by describe_command
 
 
 def _hazards(hazards: str | Sequence[str] | None) -> tuple[str, ...]:
@@ -804,6 +814,31 @@ def hazards_of(cls: type, name: str) -> tuple[str, ...]:
         hazard if origin == name else f"{origin}: {hazard}"
         for origin, hazard in _hazard_origins(cls, name, frozenset({name}))
     )
+
+
+def check_selector_defaults(cls: type) -> None:
+    """Refuse a default on a selector of a command the driver class defines.
+
+    A call leaving it out would silently address whichever subunit the default names. Called by
+    EmptyDevice.__init_subclass__: the selector aliases, class-local ones included, resolve only once the class body
+    ran.
+    """
+    for name, member in vars(cls).items():
+        if command_info(member) is None:
+            continue
+        function = inspect.unwrap(member)
+        hints = _hints(function, dict(vars(cls)))
+        for parameter in _signature(function).parameters.values():
+            if (
+                parameter.default is not inspect.Parameter.empty
+                and parameter.name in hints
+                and value_spec(hints[parameter.name]).selector
+            ):
+                msg = (
+                    f"@command {name}: the selector {parameter.name} takes no default - a call that leaves it out "
+                    f"would silently address whichever {parameter.name} the default names."
+                )
+                raise TypeError(msg)
 
 
 def check_command_overrides(cls: type) -> None:
@@ -927,7 +962,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
     hints = _hints(function, _defining_namespace(type(device), function))
     description = description_of(function)
 
-    parameters = []
+    parameters: list[ParameterSpec] = []
     for parameter in signature.parameters.values():
         if parameter.name == "self" or parameter.kind in (
             inspect.Parameter.VAR_POSITIONAL,
@@ -935,21 +970,23 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
         ):
             continue
         required = parameter.default is inspect.Parameter.empty
+        value = value_spec(hints[parameter.name]) if parameter.name in hints else ValueSpec()
         parameters.append(
             ParameterSpec(
                 name=parameter.name,
-                value=value_spec(hints[parameter.name]) if parameter.name in hints else ValueSpec(),
+                value=value,
                 required=required,
                 default=None if required else parameter.default,
-                is_channel=parameter.name in CHANNEL_PARAMETERS,
+                # Declared: only what is marked. Undeclared: also the one selector known by its name.
+                selector=value.selector or (info is None and parameter.name in CHANNEL_PARAMETERS),
             ),
         )
-    value_parameters = [p for p in parameters if not p.is_channel]
+    value_parameters = [p for p in parameters if not p.selector]
 
     return_values = _return_values(hints["return"]) if "return" in hints else None
     if info is not None:
         # Declared: everything comes from @command and the signature, nothing from the name.
-        kind = info.kind
+        kind = info.kind or ("set" if value_parameters else "run")
         returns = info.returns or ()
         reads = info.reads
     else:
@@ -992,6 +1029,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
         quantity=quantity,
         labels=labels,
         calls=calls_of(type(device), name) if info and info.composite else (),
+        selectors=tuple(p.name for p in parameters if p.selector),
     )
 
 
