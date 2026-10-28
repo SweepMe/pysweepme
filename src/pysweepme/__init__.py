@@ -41,7 +41,17 @@ if sys.platform == "win32":
     from . import WinFolder
 
 from ._utils import load_source
-from .commands import Label, Range, Selector, Unit, command, describe_commands
+from .commands import (
+    CommandError,
+    CommandNotice,
+    Label,
+    Range,
+    Selector,
+    Unit,
+    collecting_notices,
+    command,
+    describe_commands,
+)
 from .DeviceManager import get_driver
 from .EmptyDeviceClass import EmptyDevice
 from .ErrorMessage import debug, error
@@ -58,6 +68,8 @@ if sys.platform == "win32":
 
 
 __all__ = [
+    "CommandError",
+    "CommandNotice",
     "Config",
     "DeviceManager",
     "EmptyDevice",
@@ -73,6 +85,7 @@ __all__ = [
     "WinFolder",
     "addFolderToPATH",
     "close_port",
+    "collecting_notices",
     "command",
     "commands",
     "debug",

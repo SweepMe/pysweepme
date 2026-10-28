@@ -7,18 +7,30 @@ import importlib.util
 import inspect
 import sys
 import textwrap
+import threading
+import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
 
-from pysweepme import Label, Range, Selector, Unit, command, commands, describe_commands
+from pysweepme import (
+    CommandError,
+    CommandNotice,
+    Label,
+    Range,
+    Selector,
+    Unit,
+    collecting_notices,
+    command,
+    commands,
+    describe_commands,
+)
 from pysweepme.commands import COMMAND_ATTRIBUTE, CommandInfo, command_info, derived_label, description_of
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.Ports import Port
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from pysweepme.commands import CommandSpec
 
 Volts = Annotated[float, Unit("V")]
@@ -1142,3 +1154,150 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
 
     assert not commands.declares_commands(Undeclared)
     assert commands.declares_commands(Declared)
+
+
+# --- error codes and notices -------------------------------------------------------------------------------------
+
+
+class Stage(EmptyDevice):
+    """A stage that clips a target beyond its limit, with a notice, and refuses to move while busy."""
+
+    def __init__(self) -> None:
+        """Start idle."""
+        super().__init__()
+        self.busy = False
+
+    @command
+    def set_position(self, position: float) -> None:
+        """Move to a position, clipped to 50."""
+        if self.busy:
+            msg = "The stage is busy."
+            raise CommandError(msg, code=38)
+        if position > 50:  # noqa: PLR2004  # the limit of this test stage
+            self.notice(f"Target {position:g} clipped to 50.")
+
+    @command(composite=True)
+    def move_twice(self, position: float) -> None:
+        """Move to a position and one further."""
+        self.set_position(position)
+        self.set_position(position + 1)
+
+    @command
+    def fail_after_notice(self) -> None:
+        """Give a notice, then fail."""
+        self.notice("Half way.")
+        msg = "Failed."
+        raise RuntimeError(msg)
+
+
+def test_a_notice_is_kept_for_the_last_call_only() -> None:
+    """device.notices holds the notices of the last command called on the instance, replaced by each call."""
+    stage = Stage()
+    assert not stage.notices
+    with collecting_notices():
+        stage.set_position(60)
+        assert stage.notices == ("Target 60 clipped to 50.",)
+        stage.set_position(10)
+        assert not stage.notices
+
+
+def test_a_composite_is_one_call() -> None:
+    """The notices of the commands a composite calls are the composite's."""
+    stage = Stage()
+    with collecting_notices():
+        stage.move_twice(55)
+    assert stage.notices == ("Target 55 clipped to 50.", "Target 56 clipped to 50.")
+
+
+def test_collecting_notices_gathers_a_block_and_warns_nothing() -> None:
+    """A block collects across commands and instances; nested blocks each get every notice; no warning is raised."""
+    first, second = Stage(), Stage()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # a warning would fail the test
+        with collecting_notices() as outer:
+            first.set_position(60)
+            with collecting_notices() as inner:
+                second.set_position(70)
+    assert outer == ["Target 60 clipped to 50.", "Target 70 clipped to 50."]
+    assert inner == ["Target 70 clipped to 50."]
+
+
+def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> None:
+    """Without a collector a CommandNotice shows the notice, at the line of the script that called the command."""
+    driver = tmp_path / "notice_driver.py"
+    driver.write_text(
+        textwrap.dedent(
+            """
+            from pysweepme import command
+            from pysweepme.EmptyDeviceClass import EmptyDevice
+
+
+            class Device(EmptyDevice):
+                @command
+                def set_position(self, position: float) -> None:
+                    \"\"\"Move.\"\"\"
+                    self.notice(f"Target {position:g} clipped to 50.")
+            """,
+        ),
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("notice_driver", driver)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    device = module.Device()
+    with pytest.warns(CommandNotice, match="Target 60 clipped to 50.") as caught:
+        device.set_position(60)  # the script line the warning points at
+    assert Path(caught[0].filename).resolve() == Path(__file__).resolve()
+    assert device.notices == ("Target 60 clipped to 50.",)
+
+
+def test_the_notices_of_a_failing_command_are_kept() -> None:
+    """A command that raises after a notice still leaves it in notices."""
+    stage = Stage()
+    with collecting_notices() as notices, pytest.raises(RuntimeError, match="Failed"):
+        stage.fail_after_notice()
+    assert stage.notices == ("Half way.",)
+    assert notices == ["Half way."]
+
+
+def test_a_notice_outside_a_command_reaches_the_collectors() -> None:
+    """A notice from a semantic phase or a helper goes to the collectors; no command's notices change."""
+    stage = Stage()
+    with collecting_notices() as notices:
+        stage.notice("Configured with defaults.")
+    assert notices == ["Configured with defaults."]
+    assert stage.notices == ()
+
+
+def test_collectors_are_per_thread() -> None:
+    """Two threads collecting at once each get only their own notices."""
+    results: dict[int, list[str]] = {}
+
+    def run(position: int) -> None:
+        with collecting_notices() as notices:
+            for _ in range(50):
+                Stage().set_position(position)
+        results[position] = notices
+
+    threads = [threading.Thread(target=run, args=(position,)) for position in (60, 70)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert results[60] == ["Target 60 clipped to 50."] * 50
+    assert results[70] == ["Target 70 clipped to 50."] * 50
+
+
+def test_command_error_carries_a_code() -> None:
+    """CommandError is a RuntimeError whose text is the message and whose code is kept beside it, by keyword only."""
+    stage = Stage()
+    stage.busy = True
+    with pytest.raises(CommandError) as caught:
+        stage.set_position(10)
+    assert isinstance(caught.value, RuntimeError)
+    assert (str(caught.value), caught.value.code) == ("The stage is busy.", 38)
+    assert CommandError("No code.").code is None
+    with pytest.raises(TypeError):
+        CommandError("busy", 38)  # type: ignore[misc]  # the code is keyword-only

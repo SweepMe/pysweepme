@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import ast
 import collections.abc
+import contextlib
 import functools
 import inspect
 import math
@@ -47,8 +48,11 @@ import numbers
 import sys
 import textwrap
 import types
+import warnings
 import weakref
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -68,12 +72,14 @@ if sys.version_info >= (3, 14):
     import annotationlib
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from .EmptyDeviceClass import EmptyDevice
 
 __all__ = [
+    "CommandError",
     "CommandInfo",
+    "CommandNotice",
     "CommandSpec",
     "Label",
     "ParameterSpec",
@@ -81,8 +87,10 @@ __all__ = [
     "Selector",
     "Unit",
     "ValueSpec",
+    "collecting_notices",
     "command",
     "describe_commands",
+    "notice",
 ]
 
 F = TypeVar("F", bound="Callable[..., Any]")
@@ -541,9 +549,8 @@ def _checked(func: F) -> F:
             }
         return specs
 
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the command's own return value
-        """Check the given arguments, then call the command."""
+    def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the command's own return value
+        """Check the given arguments, select a stateful selector where it changed, then call the command."""
         bound = signature.bind(*args, **kwargs)
         checks = parameter_specs(bound)
         if checks:
@@ -557,6 +564,28 @@ def _checked(func: F) -> F:
                 _select(bound.arguments[receiver], wanted)
             return func(*bound.args, **bound.kwargs)
         return func(*args, **kwargs)
+
+    return _keeping_notices(func, call, receiver)
+
+
+def _keeping_notices(func: F, call: Callable[..., Any], receiver: str | None) -> F:
+    """The command as its callers see it: the outermost call of a context keeps its notices in the device's notices."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the command's own return value
+        """Call the command, keeping the notices of an outermost call for the device's `notices`."""
+        if _CALL_NOTICES.get() is not None:
+            return call(*args, **kwargs)  # called by a composite: its notices are the composite's
+        notices: list[str] = []
+        token = _CALL_NOTICES.set(notices)
+        try:
+            return call(*args, **kwargs)
+        finally:
+            _CALL_NOTICES.reset(token)
+            instance = args[0] if args else kwargs.get(receiver) if receiver is not None else None
+            if instance is not None:
+                with contextlib.suppress(AttributeError):  # a driver class that refuses new attributes
+                    instance.notices = tuple(notices)
 
     return wrapper  # type: ignore[return-value]  # functools.wraps keeps the signature of func
 
@@ -743,6 +772,92 @@ def command_info(method: object) -> CommandInfo | None:
     """The @command metadata of a method or function, None if it is not decorated."""
     info = getattr(method, COMMAND_ATTRIBUTE, None)
     return info if isinstance(info, CommandInfo) else None
+
+
+# --- errors and notices ------------------------------------------------------------------------------------------
+
+
+class CommandError(RuntimeError):
+    """A command that could not do what it was asked, with the code of the instrument or its library where it has one.
+
+    `raise CommandError("The stage is busy.", code=38)`: a script branches on `error.code`, Instrument Control records
+    it. The message says what went wrong; the code is kept apart, so that it is not said twice.
+    """
+
+    def __init__(self, message: str = "", *, code: int | str | None = None) -> None:
+        """Keep the message as the exception's text and the code beside it."""
+        super().__init__(message)
+        self.code = code
+
+
+class CommandNotice(UserWarning):
+    """The warning a notice raises when nobody collects notices: a script's console shows it."""
+
+
+#: The lists every notice of this context is appended to (collecting_notices), innermost last.
+_COLLECTORS: ContextVar[tuple[list[str], ...]] = ContextVar("pysweepme_notice_collectors", default=())
+#: The notices of the outermost command call running in this context, for its device's `notices`.
+_CALL_NOTICES: ContextVar[list[str] | None] = ContextVar("pysweepme_call_notices", default=None)
+
+
+@contextlib.contextmanager
+def collecting_notices() -> Iterator[list[str]]:
+    """Collect the notices raised inside the block, across commands and driver instances, in the list it yields.
+
+    A ContextVar keeps it per thread and per call. While a collector is active, a notice raises no warning; nested
+    collectors each get every notice of their block.
+    """
+    notices: list[str] = []
+    token = _COLLECTORS.set((*_COLLECTORS.get(), notices))
+    try:
+        yield notices
+    finally:
+        _COLLECTORS.reset(token)
+
+
+def notice(text: str) -> None:
+    """Report that a command did what it was asked, with something a person should know.
+
+    The text goes to the running command call (the device's `notices`) and to every active collector; with no
+    collector a CommandNotice warning shows it, at the line of the script that called the command. EmptyDevice.notice
+    is the driver's way to call it.
+    """
+    text = str(text)
+    call = _CALL_NOTICES.get()
+    if call is not None:
+        call.append(text)
+    collectors = _COLLECTORS.get()
+    for collected in collectors:
+        collected.append(text)
+    if not collectors:
+        warnings.warn(text, CommandNotice, stacklevel=_caller_level())
+
+
+#: pysweepme's own folder: its frames are skipped when a notice warning looks for the caller.
+_PACKAGE_FOLDER = Path(__file__).resolve().parent
+
+
+def _caller_level() -> int:
+    """The stacklevel, seen from notice(), of the first frame outside pysweepme and the driver that gave the notice.
+
+    That is the script line that called the command, which is what its author needs; without one (the driver itself
+    is the top of the stack), the driver's line.
+    """
+
+    def inside(frame: types.FrameType, place: Path) -> bool:
+        """Whether the frame's code lies in this folder or is this file."""
+        return Path(frame.f_code.co_filename).resolve().is_relative_to(place)
+
+    frame: types.FrameType | None = sys._getframe(2)  # noqa: SLF001  # notice's caller, its stacklevel 2
+    level = 2
+    while frame is not None and inside(frame, _PACKAGE_FOLDER):
+        frame, level = frame.f_back, level + 1
+    if frame is None:
+        return 2
+    driver_file, driver_level = Path(frame.f_code.co_filename).resolve(), level
+    while frame is not None and (inside(frame, _PACKAGE_FOLDER) or inside(frame, driver_file)):
+        frame, level = frame.f_back, level + 1
+    return level if frame is not None else driver_level
 
 
 # --- what a composite calls --------------------------------------------------------------------------------------

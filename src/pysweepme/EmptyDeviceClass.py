@@ -50,6 +50,9 @@ class EmptyDevice:
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
+    #: The notices of the last command called on this instance (notice), replaced by each call; () before any.
+    notices: tuple[str, ...] = ()
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
         super().__init_subclass__(**kwargs)
@@ -636,6 +639,17 @@ class EmptyDevice:
     def write_log(self, msg: str) -> None:
         """deprecated, remains for compatibility reasons."""
         self.message_log(msg)
+
+    def notice(self, text: str) -> None:
+        """Report, inside a command, that it did what it was asked with something a person should know.
+
+        E.g. `self.notice("Target clipped to 50 mm (code 1).")`. The text is kept in `notices` for the command's
+        caller, goes to every `collecting_notices()` block, and shows as a CommandNotice warning where nobody collects.
+        A command that could not do what it was asked raises instead, e.g. a CommandError with the code.
+        """
+        from . import commands  # noqa: PLC0415  # commands imports this module
+
+        commands.notice(text)
 
     def message_log(self, msg: str) -> None:
         """Writes message to logbook file."""
