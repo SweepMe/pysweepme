@@ -50,12 +50,6 @@ class EmptyDevice:
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
-    notices: tuple[str, ...] = ()
-    """The notices of the last command called on this instance (pysweepme.commands.notice); () before any.
-
-    Replaced by each call; a composite is one call, holding the notices of the commands it calls.
-    """
-
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
         super().__init_subclass__(**kwargs)

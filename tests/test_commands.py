@@ -7,9 +7,6 @@ import importlib.util
 import inspect
 import sys
 import textwrap
-import threading
-import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
@@ -19,23 +16,22 @@ from pysweepme.commands import (
     COMMAND_ATTRIBUTE,
     CommandError,
     CommandInfo,
-    CommandNotice,
     Label,
     Range,
     Selector,
     Unit,
-    collecting_notices,
     command,
     command_info,
     derived_label,
     describe_commands,
     description_of,
-    notice,
 )
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.Ports import Port
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pysweepme.commands import CommandSpec
 
 Volts = Annotated[float, Unit("V")]
@@ -1268,11 +1264,11 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
     assert commands.declares_commands(Declared)
 
 
-# --- error codes and notices -------------------------------------------------------------------------------------
+# --- error codes --------------------------------------------------------------------------------------------------
 
 
 class Stage(EmptyDevice):
-    """A stage that moves beyond its calibrated range with a notice, and refuses to move while busy."""
+    """A stage that refuses to move while busy, with the code of its library."""
 
     def __init__(self) -> None:
         """Start idle."""
@@ -1280,129 +1276,11 @@ class Stage(EmptyDevice):
         self.busy = False
 
     @command
-    def set_position(self, position: float) -> None:
-        """Move to a position; it is calibrated up to 50."""
+    def set_position(self, position: float) -> None:  # noqa: ARG002  # a test stub
+        """Move to a position."""
         if self.busy:
             msg = "The stage is busy."
             raise CommandError(msg, code=38)
-        if position > 50:  # noqa: PLR2004  # the calibrated range of this test stage
-            notice(f"Position {position:g} lies outside the calibrated range.")
-
-    @command(composite=True)
-    def move_twice(self, position: float) -> None:
-        """Move to a position and one further."""
-        self.set_position(position)
-        self.set_position(position + 1)
-
-    @command
-    def fail_after_notice(self) -> None:
-        """Give a notice, then fail."""
-        notice("Half way.")
-        msg = "Failed."
-        raise RuntimeError(msg)
-
-
-def test_a_notice_is_kept_for_the_last_call_only() -> None:
-    """device.notices holds the notices of the last command called on the instance, replaced by each call."""
-    stage = Stage()
-    assert not stage.notices
-    with collecting_notices():
-        stage.set_position(60)
-        assert stage.notices == ("Position 60 lies outside the calibrated range.",)
-        stage.set_position(10)
-        assert not stage.notices
-
-
-def test_a_composite_is_one_call() -> None:
-    """The notices of the commands a composite calls are the composite's."""
-    stage = Stage()
-    with collecting_notices():
-        stage.move_twice(55)
-    assert stage.notices == (
-        "Position 55 lies outside the calibrated range.",
-        "Position 56 lies outside the calibrated range.",
-    )
-
-
-def test_collecting_notices_gathers_a_block_and_warns_nothing() -> None:
-    """A block collects across commands and instances; nested blocks each get every notice; no warning is raised."""
-    first, second = Stage(), Stage()
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # a warning would fail the test
-        with collecting_notices() as outer:
-            first.set_position(60)
-            with collecting_notices() as inner:
-                second.set_position(70)
-    assert outer == ["Position 60 lies outside the calibrated range.", "Position 70 lies outside the calibrated range."]
-    assert inner == ["Position 70 lies outside the calibrated range."]
-
-
-def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> None:
-    """Without a collector a CommandNotice shows the notice, at the line of the script that called the command."""
-    driver = tmp_path / "notice_driver.py"
-    driver.write_text(
-        textwrap.dedent(
-            """
-            from pysweepme.commands import command, notice
-            from pysweepme.EmptyDeviceClass import EmptyDevice
-
-
-            class Device(EmptyDevice):
-                @command
-                def set_position(self, position: float) -> None:
-                    \"\"\"Move.\"\"\"
-                    notice(f"Position {position:g} lies outside the calibrated range.")
-            """,
-        ),
-        encoding="utf-8",
-    )
-    spec = importlib.util.spec_from_file_location("notice_driver", driver)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    device = module.Device()
-    with pytest.warns(CommandNotice, match="Position 60 lies outside the calibrated range.") as caught:
-        device.set_position(60)  # the script line the warning points at
-    assert Path(caught[0].filename).resolve() == Path(__file__).resolve()
-    assert device.notices == ("Position 60 lies outside the calibrated range.",)
-
-
-def test_the_notices_of_a_failing_command_are_kept() -> None:
-    """A command that raises after a notice still leaves it in notices."""
-    stage = Stage()
-    with collecting_notices() as notices, pytest.raises(RuntimeError, match="Failed"):
-        stage.fail_after_notice()
-    assert stage.notices == ("Half way.",)
-    assert notices == ["Half way."]
-
-
-def test_a_notice_outside_a_command_reaches_the_collectors() -> None:
-    """A notice from a semantic phase or a helper goes to the collectors; no command's notices change."""
-    stage = Stage()
-    with collecting_notices() as notices:
-        notice("Configured with defaults.")
-    assert notices == ["Configured with defaults."]
-    assert stage.notices == ()
-
-
-def test_collectors_are_per_thread() -> None:
-    """Two threads collecting at once each get only their own notices."""
-    results: dict[int, list[str]] = {}
-
-    def run(position: int) -> None:
-        with collecting_notices() as notices:
-            for _ in range(50):
-                Stage().set_position(position)
-        results[position] = notices
-
-    threads = [threading.Thread(target=run, args=(position,)) for position in (60, 70)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    assert results[60] == ["Position 60 lies outside the calibrated range."] * 50
-    assert results[70] == ["Position 70 lies outside the calibrated range."] * 50
 
 
 def test_command_error_carries_a_code() -> None:
