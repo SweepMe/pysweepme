@@ -25,7 +25,17 @@ __version__ = "1.6.1.4"
 
 import sys
 
-from . import Config, DeviceManager, EmptyDeviceClass, ErrorMessage, FolderManager, PortManager, Ports, driver_versions
+from . import (
+    Config,
+    DeviceManager,
+    EmptyDeviceClass,
+    ErrorMessage,
+    FolderManager,
+    PortManager,
+    Ports,
+    commands,
+    driver_versions,
+)
 
 if sys.platform == "win32":
     from . import WinFolder
@@ -58,6 +68,7 @@ __all__ = [
     "WinFolder",
     "addFolderToPATH",
     "close_port",
+    "commands",
     "debug",
     "driver_versions",
     "error",

@@ -37,6 +37,8 @@ from pysweepme.UserInterface import message_balloon, message_box, message_info, 
 from .FolderManager import getFoMa
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable
+
     from pysweepme.Ports import Port
 
 _config = ConfigParser()
@@ -49,6 +51,27 @@ class EmptyDevice:
 
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
+        super().__init_subclass__(**kwargs)
+        from .commands import (  # noqa: PLC0415  # commands imports this module
+            check_command_overrides,
+            check_selector_defaults,
+            check_selector_overlaps,
+            complete_hazard_sections,
+            declares_commands,
+            prepare_stateful_selectors,
+        )
+
+        # A driver without @command is not checked at all: a check added later cannot keep it from loading
+        if not declares_commands(cls):
+            return
+        check_command_overrides(cls)
+        check_selector_defaults(cls)
+        check_selector_overlaps(cls)
+        complete_hazard_sections(cls)
+        prepare_stateful_selectors(cls)
 
     def __init__(self) -> None:
         self.variables: list[str] = []
@@ -81,8 +104,12 @@ class EmptyDevice:
 
         self._latest_parameters: dict[str, Any] | None = None
 
-    def is_function_overwritten(self, function: str) -> bool:
+    @classmethod
+    def is_function_overwritten(cls, function: str) -> bool:
         """Test if a given function is overwritten in a child class of EmptyDevice.
+
+        A class method, so that it also answers for a driver class without an instance (pysweepme's commands module
+        asks it when the class is created); called on an instance it answers for the instance's class.
 
         Args:
             function: The name of the function to check.
@@ -94,10 +121,10 @@ class EmptyDevice:
         # Get the class and a list of all base classes in the order python would resolve functions
         # using getmro(). If function is element of the classes dictionary and a function, BEFORE looking into
         # the EmptyDevice class, then function was obviously overridden by a subclass.
-        for cls in inspect.getmro(self.__class__):
-            if cls is EmptyDevice:
+        for klass in inspect.getmro(cls):
+            if klass is EmptyDevice:
                 break
-            if function in cls.__dict__ and callable(getattr(cls, function, None)):
+            if function in klass.__dict__ and callable(getattr(klass, function, None)):
                 overwrites = True
                 break
 
@@ -141,6 +168,43 @@ class EmptyDevice:
         empty_device_functions = [func for func in dir(EmptyDevice) if callable(getattr(EmptyDevice, func))]
 
         return list(set(all_functions) - set(empty_device_functions))
+
+    def apply_selectors(self, *args: Any, **selectors: Any) -> None:  # any signature may override it
+        """Take over the subunit a host binds this driver to: slot=3, channel=2, as the commands take them.
+
+        Instrument Control calls it after connect() when a bench entry binds selectors (parameters marked
+        Selector()), with the values in the commands' own form. The commands receive the selectors as arguments
+        anyway; a driver overrides this only where its own semantic phases - initialize, poweron, poweroff,
+        deinitialize - act on one subunit, so that they act on the bound one, e.g. by setting self.channel. The default
+        does nothing.
+
+        For a Selector(stateful=True) it is the one place that selects (INST:OUT2): @command calls it with the
+        stateful selectors that changed before a command needs them, so it must take any subset of them. Every call is
+        remembered in the driver's selection scope (selection_scope); selecting anywhere else would not be.
+        """
+        _ = args, selectors
+
+    def selection_scope(self) -> Hashable | None:
+        """Name the connection that shares the instrument's selection, for a driver without the port manager.
+
+        Only for drivers with a Selector(stateful=True): the instrument keeps a selection, and every driver instance
+        talking to it through the same connection must know what is selected. With the port manager the Port is that
+        connection and this is not asked. Otherwise return a key like those of device_communication, e.g.
+        ("labjack", serial) for a library handle shared by the instances, or self for a connection of the instance's
+        own. The default None remembers nothing: every command taking a stateful selector selects, which is always
+        right and costs one write more.
+        """
+        return None
+
+    def forget_selections(self) -> None:
+        """Forget what the instrument has selected, so that the next command selects again (stateful selectors).
+
+        A driver calls it where the instrument may have lost its selection without apply_selectors - after its own
+        reset, for example. connect() and disconnect() forget it by themselves, and a host after raw traffic.
+        """
+        from .commands import forget_selections  # noqa: PLC0415  # commands imports this module
+
+        forget_selections(self)
 
     def store_parameter(self, key: str, value: object) -> None:
         """Stores a value in the ParameterStore for a given key.
