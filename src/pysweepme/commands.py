@@ -91,6 +91,7 @@ __all__ = [
     "command",
     "describe_commands",
     "notice",
+    "selector_overlaps",
 ]
 
 F = TypeVar("F", bound="Callable[..., Any]")
@@ -143,10 +144,46 @@ class Selector:
     driver selects it in `apply_selectors`, and @command calls that only when the selection changes; the selection is
     remembered on the Port, so every driver instance on it knows it.
 
+    `Selector(overlaps={"TRACK25V": ("+25V", "-25V")})` names values that reach the same hardware as other values
+    (tracking drives both 25 V outputs; on a LabJack T4, AIN4 is FIO4). The relation is symmetric and not transitive:
+    TRACK25V overlaps +25V and -25V, which stay apart. Where it depends on the model, `overlaps="pin_overlaps"` names a
+    method of the driver answering the mapping for the connected instrument, or None while it is not known.
+
     Its options are keyword-only, so that one added later cannot shift the meaning of an existing driver's call.
     """
 
     stateful: bool = False
+    #: Values that reach the same hardware, {value: (other values, ...)}, or the name of a method answering that.
+    overlaps: Overlaps | str | None = None
+
+    def __post_init__(self) -> None:
+        """Keep a mapping of overlaps as a tuple of pairs, so the marker stays immutable and hashable."""
+        if self.overlaps is not None and not isinstance(self.overlaps, str):
+            object.__setattr__(self, "overlaps", freeze_overlaps(self.overlaps))
+
+
+#: Overlaps as a Selector keeps them: ((value, (other values, ...)), ...).
+Overlaps = tuple[tuple[Any, tuple[Any, ...]], ...]
+
+
+def freeze_overlaps(overlaps: object) -> Overlaps:
+    """A mapping {value: other value or values} as the tuple of pairs a Selector keeps; TypeError if it is none."""
+    if isinstance(overlaps, collections.abc.Mapping):
+        items = list(overlaps.items())
+    elif isinstance(overlaps, tuple):  # kept as pairs already: a copy of a marker
+        items = list(overlaps)
+    else:
+        msg = f"Selector overlaps must be a mapping {{value: (other values, ...)}} or a method name, not {overlaps!r}."
+        raise TypeError(msg)
+    frozen = []
+    for value, others in items:
+        listed = (
+            (others,)
+            if isinstance(others, (str, bytes)) or not isinstance(others, collections.abc.Iterable)
+            else tuple(others)
+        )
+        frozen.append((value, listed))
+    return tuple(frozen)
 
 
 @dataclass(frozen=True)
@@ -207,6 +244,8 @@ class ValueSpec:
     selector: bool = False
     #: Marked Selector(stateful=True): the instrument keeps it as a selection, which @command makes when it changes.
     stateful: bool = False
+    #: Selector(overlaps=...): values reaching the same hardware as other values, or the method answering them.
+    overlaps: Overlaps | str | None = None
 
     @property
     def type_name(self) -> str:
@@ -263,6 +302,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
     unit = label = None
     value_range = None
     selector = stateful = False
+    overlaps: Overlaps | str | None = None
     if get_origin(hint) is Annotated:
         hint, *metadata = get_args(hint)
         for item in metadata:
@@ -273,7 +313,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
             elif isinstance(item, Range):
                 value_range = item
             elif isinstance(item, Selector):
-                selector, stateful = True, item.stateful
+                selector, stateful, overlaps = True, item.stateful, item.overlaps
     optional = False
     if _is_union(hint):
         members = [m for m in get_args(hint) if m is not type(None)]
@@ -290,6 +330,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 items=inner.items,
                 selector=selector or inner.selector,
                 stateful=stateful or inner.stateful,
+                overlaps=overlaps if overlaps is not None else inner.overlaps,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
@@ -303,6 +344,7 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         items=_item_spec(hint),
         selector=selector,
         stateful=stateful,
+        overlaps=overlaps,
     )
 
 
@@ -1025,6 +1067,84 @@ def prepare_stateful_selectors(cls: type) -> None:
         raise TypeError(msg)
     if not getattr(hook, REMEMBERS_ATTRIBUTE, False):
         setattr(cls, "apply_selectors", _remembering(hook))  # noqa: B010  # a method replaced on the class
+
+
+# --- values reaching the same hardware ----------------------------------------------------------------------------
+
+
+def selector_specs(cls: type) -> dict[str, list[tuple[str, ValueSpec]]]:
+    """The selectors the commands of a driver class take, by name: (command, spec) per command, base classes too."""
+    found: dict[str, dict[str, ValueSpec]] = {}
+    for klass in reversed(cls.__mro__):
+        for command_name, member in vars(klass).items():
+            if command_info(member) is None:
+                continue
+            function = inspect.unwrap(member)
+            for name, hint in _hints(function, dict(vars(klass))).items():
+                spec = value_spec(hint)
+                if spec.selector:
+                    found.setdefault(name, {})[command_name] = spec
+    return {name: list(uses.items()) for name, uses in found.items()}
+
+
+def check_selector_overlaps(cls: type) -> None:
+    """Refuse overlaps a driver class declares wrongly; a class whose selectors declare none is not looked at.
+
+    Called by EmptyDevice.__init_subclass__. Every command takes the selector with the same overlaps, every value
+    named is one the selector takes and none overlaps itself, and a method named instead exists on the class.
+    """
+    for name, uses in selector_specs(cls).items():
+        declared = {spec.overlaps for _, spec in uses}
+        if declared == {None}:
+            continue
+        if len(declared) > 1:
+            commands = ", ".join(sorted(command_name for command_name, _ in uses))
+            msg = (
+                f"{cls.__name__}: the selector {name} is declared with different overlaps in {commands} - use one "
+                f"alias for it in every command."
+            )
+            raise TypeError(msg)
+        spec = uses[0][1]
+        overlaps = spec.overlaps
+        if isinstance(overlaps, str):
+            if not callable(getattr(cls, overlaps, None)):
+                msg = f"{cls.__name__}: the selector {name} names the method {overlaps} for its overlaps, which is "
+                msg += "missing."
+                raise TypeError(msg)
+            continue
+        named = [listed for value, others in overlaps or () for listed in (value, *others)]
+        try:
+            for listed in named:
+                check_value("Selector overlaps", name, listed, replace(spec, optional=False))
+        except ValueError as exc:
+            msg = f"{cls.__name__}: {exc}"
+            raise TypeError(msg) from None
+        for value, others in overlaps or ():
+            if value in others:
+                msg = f"{cls.__name__}: the selector {name} lists {value!r} as overlapping itself."
+                raise TypeError(msg)
+
+
+def selector_overlaps(device: Any, spec: ValueSpec) -> dict[Any, tuple[Any, ...]] | None:  # noqa: ANN401
+    """The values of a selector that reach the same hardware, both ways round: {value: (other values, ...)}.
+
+    {} for a selector that declares none. Where it names a method, the driver instance is asked each time, since the
+    answer may depend on the instrument connected (its model); None when the method does not know yet.
+    """
+    overlaps = spec.overlaps
+    if isinstance(overlaps, str):
+        answer = getattr(device, overlaps)()
+        if answer is None:
+            return None
+        overlaps = freeze_overlaps(answer)
+    both: dict[Any, list[Any]] = {}
+    for value, others in overlaps or ():
+        for other in others:
+            if other not in both.setdefault(value, []):
+                both[value].append(other)
+            if value not in both.setdefault(other, []):
+                both[other].append(value)
+    return {value: tuple(others) for value, others in both.items()}
 
 
 def _remembering(hook: Callable[..., Any]) -> Callable[..., Any]:

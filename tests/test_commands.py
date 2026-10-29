@@ -1107,6 +1107,112 @@ def test_a_plain_selector_selects_nothing() -> None:
     assert device.calls == [("set_voltage", (1, 2.0))]
 
 
+# --- values reaching the same hardware ------------------------------------------------------------------------------
+
+Supply = Annotated[
+    Literal["+6V", "+25V", "-25V", "TRACK25V"],
+    Selector(overlaps={"TRACK25V": ("+25V", "-25V")}),
+]
+
+
+ModelPin = Annotated[str, Selector(overlaps="pin_overlaps")]
+
+
+class Tracking(EmptyDevice):
+    """Three outputs, and tracking driving two of them."""
+
+    @command
+    def set_voltage(self, output: Supply, voltage: float) -> None:
+        """Set the voltage."""
+
+    @command(returns=("voltage",))
+    def get_voltage(self, output: Supply) -> float:  # noqa: ARG002  # a test stub
+        """Measure the voltage."""
+        return 0.0
+
+
+def test_overlaps_are_kept_immutable_and_answered_both_ways_round() -> None:
+    """The marker keeps a mapping as pairs; the answer adds the way back, and does not chain +25V to -25V."""
+    marker = Selector(overlaps={"TRACK25V": ["+25V", "-25V"], "A": "B"})
+    assert marker.overlaps == (("TRACK25V", ("+25V", "-25V")), ("A", ("B",)))
+    assert hash(marker) == hash(Selector(overlaps={"TRACK25V": ("+25V", "-25V"), "A": ("B",)}))
+    spec = commands.describe_command(Tracking(), "set_voltage").parameters[0].value  # type: ignore[union-attr]
+    assert commands.selector_overlaps(Tracking(), spec) == {
+        "TRACK25V": ("+25V", "-25V"),
+        "+25V": ("TRACK25V",),
+        "-25V": ("TRACK25V",),
+    }
+    assert commands.selector_overlaps(Tracking(), commands.value_spec(Output)) == {}
+
+
+def test_overlaps_answered_by_a_method_follow_the_instrument() -> None:
+    """A method named instead is asked each time: None while the model is not known, its mapping afterwards."""
+
+    class Pins(EmptyDevice):
+        model: str | None = None
+
+        def pin_overlaps(self) -> dict[str, tuple[str, ...]] | None:
+            """AIN4 is FIO4 on the T4 only."""
+            if self.model is None:
+                return None
+            return {"AIN4": ("FIO4",)} if self.model == "T4" else {}
+
+        @command(returns=("voltage",))
+        def get_voltage(self, pin: ModelPin) -> float:  # noqa: ARG002  # a test stub
+            """Measure the voltage."""
+            return 0.0
+
+    device = Pins()
+    spec = commands.value_spec(ModelPin)
+    assert commands.selector_overlaps(device, spec) is None
+    device.model = "T7"
+    assert commands.selector_overlaps(device, spec) == {}
+    device.model = "T4"
+    assert commands.selector_overlaps(device, spec) == {"AIN4": ("FIO4",), "FIO4": ("AIN4",)}
+
+
+def test_wrong_overlaps_are_refused_when_the_class_is_created() -> None:
+    """A value the selector does not take, a value overlapping itself, a missing method, two declarations."""
+    with pytest.raises(TypeError, match="is not one of"):
+
+        class Unknown(EmptyDevice):
+            @command
+            def set_voltage(
+                self,
+                output: Annotated[Literal["A", "B"], Selector(overlaps={"AB": ("A", "B")})],
+                voltage: float,
+            ) -> None:
+                """Set the voltage."""
+
+    with pytest.raises(TypeError, match="overlapping itself"):
+
+        class Itself(EmptyDevice):
+            @command
+            def set_voltage(self, output: Annotated[int, Selector(overlaps={1: (1, 2)})], voltage: float) -> None:
+                """Set the voltage."""
+
+    with pytest.raises(TypeError, match="which is missing"):
+
+        class NoMethod(EmptyDevice):
+            @command
+            def set_voltage(self, output: Annotated[int, Selector(overlaps="output_overlaps")], voltage: float) -> None:
+                """Set the voltage."""
+
+    with pytest.raises(TypeError, match="different overlaps"):
+
+        class TwoDeclarations(EmptyDevice):
+            @command
+            def set_voltage(self, output: Supply, voltage: float) -> None:
+                """Set the voltage."""
+
+            @command
+            def set_current(self, output: Annotated[Literal["+6V", "+25V"], Selector()], current: float) -> None:
+                """Set the current."""
+
+    with pytest.raises(TypeError, match="mapping"):
+        Selector(overlaps=["A", "B"])  # type: ignore[arg-type]  # refused on purpose
+
+
 # --- extending @command without breaking the drivers written before ------------------------------------------------
 
 
@@ -1143,6 +1249,7 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
     for check in (
         "check_command_overrides",
         "check_selector_defaults",
+        "check_selector_overlaps",
         "complete_hazard_sections",
         "prepare_stateful_selectors",
     ):

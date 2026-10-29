@@ -59,6 +59,7 @@ class EmptyDevice:
         from .commands import (  # noqa: PLC0415  # commands imports this module
             check_command_overrides,
             check_selector_defaults,
+            check_selector_overlaps,
             complete_hazard_sections,
             declares_commands,
             prepare_stateful_selectors,
@@ -69,6 +70,7 @@ class EmptyDevice:
             return
         check_command_overrides(cls)
         check_selector_defaults(cls)
+        check_selector_overlaps(cls)
         complete_hazard_sections(cls)
         prepare_stateful_selectors(cls)
 
