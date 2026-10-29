@@ -51,7 +51,10 @@ class EmptyDevice:
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
     notices: tuple[str, ...] = ()
-    """The notices of the last command called on this instance (notice), replaced by each call; () before any."""
+    """The notices of the last command called on this instance (pysweepme.commands.notice); () before any.
+
+    Replaced by each call; a composite is one call, holding the notices of the commands it calls.
+    """
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
@@ -645,18 +648,6 @@ class EmptyDevice:
     def write_log(self, msg: str) -> None:
         """deprecated, remains for compatibility reasons."""
         self.message_log(msg)
-
-    def notice(self, text: str) -> None:
-        """Report, inside a command, that it did what it was asked with something a person should know.
-
-        E.g. `self.notice("Position 60 mm lies outside the calibrated range.")`. The text is kept in `notices` for
-        the command's caller, goes to every `collecting_notices()` block, and shows as a CommandNotice warning where
-        nobody collects. A command that could not do what it was asked raises instead, e.g. a CommandError with the
-        code; so does a value out of range, which is never clipped.
-        """
-        from . import commands  # noqa: PLC0415  # commands imports this module
-
-        commands.notice(text)
 
     def message_log(self, msg: str) -> None:
         """Writes message to logbook file."""

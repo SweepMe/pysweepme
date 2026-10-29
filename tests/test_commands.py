@@ -14,8 +14,11 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
 
-from pysweepme import (
+from pysweepme import commands
+from pysweepme.commands import (
+    COMMAND_ATTRIBUTE,
     CommandError,
+    CommandInfo,
     CommandNotice,
     Label,
     Range,
@@ -23,10 +26,12 @@ from pysweepme import (
     Unit,
     collecting_notices,
     command,
-    commands,
+    command_info,
+    derived_label,
     describe_commands,
+    description_of,
+    notice,
 )
-from pysweepme.commands import COMMAND_ATTRIBUTE, CommandInfo, command_info, derived_label, description_of
 from pysweepme.EmptyDeviceClass import EmptyDevice
 from pysweepme.Ports import Port
 
@@ -255,7 +260,7 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
     """On Python 3.14 a return annotation naming something defined later is not evaluated by @command."""
     source = textwrap.dedent(
         """
-        from pysweepme import command
+        from pysweepme.commands import command
         from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -403,7 +408,7 @@ def test_driver_module_with_future_annotations(tmp_path: Path) -> None:
 
         from typing import Annotated, Literal
 
-        from pysweepme import Range, Unit, command
+        from pysweepme.commands import Range, Unit, command
         from pysweepme.EmptyDeviceClass import EmptyDevice
 
         Volts = Annotated[float, Unit("V")]
@@ -1281,7 +1286,7 @@ class Stage(EmptyDevice):
             msg = "The stage is busy."
             raise CommandError(msg, code=38)
         if position > 50:  # noqa: PLR2004  # the calibrated range of this test stage
-            self.notice(f"Position {position:g} lies outside the calibrated range.")
+            notice(f"Position {position:g} lies outside the calibrated range.")
 
     @command(composite=True)
     def move_twice(self, position: float) -> None:
@@ -1292,7 +1297,7 @@ class Stage(EmptyDevice):
     @command
     def fail_after_notice(self) -> None:
         """Give a notice, then fail."""
-        self.notice("Half way.")
+        notice("Half way.")
         msg = "Failed."
         raise RuntimeError(msg)
 
@@ -1338,7 +1343,7 @@ def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> No
     driver.write_text(
         textwrap.dedent(
             """
-            from pysweepme import command
+            from pysweepme.commands import command, notice
             from pysweepme.EmptyDeviceClass import EmptyDevice
 
 
@@ -1346,7 +1351,7 @@ def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> No
                 @command
                 def set_position(self, position: float) -> None:
                     \"\"\"Move.\"\"\"
-                    self.notice(f"Position {position:g} lies outside the calibrated range.")
+                    notice(f"Position {position:g} lies outside the calibrated range.")
             """,
         ),
         encoding="utf-8",
@@ -1376,7 +1381,7 @@ def test_a_notice_outside_a_command_reaches_the_collectors() -> None:
     """A notice from a semantic phase or a helper goes to the collectors; no command's notices change."""
     stage = Stage()
     with collecting_notices() as notices:
-        stage.notice("Configured with defaults.")
+        notice("Configured with defaults.")
     assert notices == ["Configured with defaults."]
     assert stage.notices == ()
 

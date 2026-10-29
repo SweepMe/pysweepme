@@ -23,7 +23,9 @@
 """Communication commands of a driver: the markers, the @command decorator and the reader describe_commands.
 
 A communication command is a public method of a driver that wraps one instrument command. Everything about a value is
-written on the value with standard Python annotations:
+written on the value with standard Python annotations, and everything of it is imported from this module:
+
+    from pysweepme.commands import Range, Unit, command
 
     Volts = Annotated[float, Unit("V")]
     SourceMode = Literal["FVMI", "FIMV"]
@@ -879,9 +881,12 @@ def collecting_notices() -> Iterator[list[str]]:
 def notice(text: str) -> None:
     """Report that a command did what it was asked, with something a person should know.
 
-    The text goes to the running command call (the device's `notices`) and to every active collector; with no
-    collector a CommandNotice warning shows it, at the line of the script that called the command. EmptyDevice.notice
-    is the driver's way to call it.
+    A driver calls it inside a command: `from pysweepme.commands import notice`, then
+    `notice("Position 60 mm lies outside the calibrated range.")`. It acts on the running command call, not on the
+    driver: the text goes to that call (the device's `notices`) and to every active collector; with no collector a
+    CommandNotice warning shows it, at the line of the script that called the command. A command that could not do
+    what it was asked raises instead, e.g. a CommandError with the code; so does a value out of range, which is never
+    clipped.
     """
     text = str(text)
     call = _CALL_NOTICES.get()
