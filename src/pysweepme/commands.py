@@ -60,6 +60,7 @@ from typing import (
     Literal,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -72,7 +73,7 @@ if sys.version_info >= (3, 14):
     import annotationlib
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from .EmptyDeviceClass import EmptyDevice
 
@@ -154,7 +155,7 @@ class Selector:
 
     stateful: bool = False
     #: Values that reach the same hardware, {value: (other values, ...)}, or the name of a method answering that.
-    overlaps: Overlaps | str | None = None
+    overlaps: Mapping[Any, Any] | Overlaps | str | None = None
 
     def __post_init__(self) -> None:
         """Keep a mapping of overlaps as a tuple of pairs, so the marker stays immutable and hashable."""
@@ -313,7 +314,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
             elif isinstance(item, Range):
                 value_range = item
             elif isinstance(item, Selector):
-                selector, stateful, overlaps = True, item.stateful, item.overlaps
+                # kept as pairs by Selector.__post_init__
+                selector, stateful, overlaps = True, item.stateful, cast("Overlaps | str | None", item.overlaps)
     optional = False
     if _is_union(hint):
         members = [m for m in get_args(hint) if m is not type(None)]
