@@ -1267,7 +1267,7 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
 
 
 class Stage(EmptyDevice):
-    """A stage that clips a target beyond its limit, with a notice, and refuses to move while busy."""
+    """A stage that moves beyond its calibrated range with a notice, and refuses to move while busy."""
 
     def __init__(self) -> None:
         """Start idle."""
@@ -1276,12 +1276,12 @@ class Stage(EmptyDevice):
 
     @command
     def set_position(self, position: float) -> None:
-        """Move to a position, clipped to 50."""
+        """Move to a position; it is calibrated up to 50."""
         if self.busy:
             msg = "The stage is busy."
             raise CommandError(msg, code=38)
-        if position > 50:  # noqa: PLR2004  # the limit of this test stage
-            self.notice(f"Target {position:g} clipped to 50.")
+        if position > 50:  # noqa: PLR2004  # the calibrated range of this test stage
+            self.notice(f"Position {position:g} lies outside the calibrated range.")
 
     @command(composite=True)
     def move_twice(self, position: float) -> None:
@@ -1303,7 +1303,7 @@ def test_a_notice_is_kept_for_the_last_call_only() -> None:
     assert not stage.notices
     with collecting_notices():
         stage.set_position(60)
-        assert stage.notices == ("Target 60 clipped to 50.",)
+        assert stage.notices == ("Position 60 lies outside the calibrated range.",)
         stage.set_position(10)
         assert not stage.notices
 
@@ -1313,7 +1313,10 @@ def test_a_composite_is_one_call() -> None:
     stage = Stage()
     with collecting_notices():
         stage.move_twice(55)
-    assert stage.notices == ("Target 55 clipped to 50.", "Target 56 clipped to 50.")
+    assert stage.notices == (
+        "Position 55 lies outside the calibrated range.",
+        "Position 56 lies outside the calibrated range.",
+    )
 
 
 def test_collecting_notices_gathers_a_block_and_warns_nothing() -> None:
@@ -1325,8 +1328,8 @@ def test_collecting_notices_gathers_a_block_and_warns_nothing() -> None:
             first.set_position(60)
             with collecting_notices() as inner:
                 second.set_position(70)
-    assert outer == ["Target 60 clipped to 50.", "Target 70 clipped to 50."]
-    assert inner == ["Target 70 clipped to 50."]
+    assert outer == ["Position 60 lies outside the calibrated range.", "Position 70 lies outside the calibrated range."]
+    assert inner == ["Position 70 lies outside the calibrated range."]
 
 
 def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> None:
@@ -1343,7 +1346,7 @@ def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> No
                 @command
                 def set_position(self, position: float) -> None:
                     \"\"\"Move.\"\"\"
-                    self.notice(f"Target {position:g} clipped to 50.")
+                    self.notice(f"Position {position:g} lies outside the calibrated range.")
             """,
         ),
         encoding="utf-8",
@@ -1354,10 +1357,10 @@ def test_a_notice_nobody_collects_warns_at_the_script_line(tmp_path: Path) -> No
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     device = module.Device()
-    with pytest.warns(CommandNotice, match="Target 60 clipped to 50.") as caught:
+    with pytest.warns(CommandNotice, match="Position 60 lies outside the calibrated range.") as caught:
         device.set_position(60)  # the script line the warning points at
     assert Path(caught[0].filename).resolve() == Path(__file__).resolve()
-    assert device.notices == ("Target 60 clipped to 50.",)
+    assert device.notices == ("Position 60 lies outside the calibrated range.",)
 
 
 def test_the_notices_of_a_failing_command_are_kept() -> None:
@@ -1393,8 +1396,8 @@ def test_collectors_are_per_thread() -> None:
         thread.start()
     for thread in threads:
         thread.join()
-    assert results[60] == ["Target 60 clipped to 50."] * 50
-    assert results[70] == ["Target 70 clipped to 50."] * 50
+    assert results[60] == ["Position 60 lies outside the calibrated range."] * 50
+    assert results[70] == ["Position 70 lies outside the calibrated range."] * 50
 
 
 def test_command_error_carries_a_code() -> None:

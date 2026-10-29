@@ -645,9 +645,10 @@ class EmptyDevice:
     def notice(self, text: str) -> None:
         """Report, inside a command, that it did what it was asked with something a person should know.
 
-        E.g. `self.notice("Target clipped to 50 mm (code 1).")`. The text is kept in `notices` for the command's
-        caller, goes to every `collecting_notices()` block, and shows as a CommandNotice warning where nobody collects.
-        A command that could not do what it was asked raises instead, e.g. a CommandError with the code.
+        E.g. `self.notice("Position 60 mm lies outside the calibrated range.")`. The text is kept in `notices` for
+        the command's caller, goes to every `collecting_notices()` block, and shows as a CommandNotice warning where
+        nobody collects. A command that could not do what it was asked raises instead, e.g. a CommandError with the
+        code; so does a value out of range, which is never clipped.
         """
         from . import commands  # noqa: PLC0415  # commands imports this module
 
