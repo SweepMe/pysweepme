@@ -97,25 +97,38 @@ __all__ = [
 
 F = TypeVar("F", bound="Callable[..., Any]")
 
-#: Attribute under which @command stores its metadata on the wrapped method.
 COMMAND_ATTRIBUTE = "__sweepme_command__"
+"""Attribute under which @command stores its metadata on the wrapped method."""
 
-#: Parameter names that carry the channel of an instrument rather than a value.
 CHANNEL_PARAMETERS = ("channel",)
+"""Parameter names that carry the channel of an instrument rather than a value - only a fallback.
 
-#: What a reader reads: a new measurement, the last measured value, a setpoint (a value a command can set, whether or
-#: not the instrument also measures it), or a state (a status or an identity, which no command sets).
+Used for a driver without @command, which marks no selectors: there a parameter named channel is the one selector. In a
+driver using @command only the parameters marked Selector() are selectors, and a plain `channel` is a value.
+"""
+
 READS = ("measurement", "last", "setpoint", "state")
-#: What @command(kind=...) may state: an action whose parameters configure it, which the signature would take for a
-#: setter. Everything else follows from the signature.
+"""What a reader reads.
+
+A new measurement, the last measured value, a setpoint (a value a command can set, whether or not the instrument also
+measures it), or a state (a status or an identity, which no command sets).
+"""
+
 KINDS = ("run",)
+"""What @command(kind=...) may state.
 
-#: Text accepted for a bool parameter, compared case-insensitively.
+An action whose parameters configure it, which the signature would take for a setter. Everything else follows from the
+signature.
+"""
+
 TRUE_TEXTS = ("true", "1", "on", "yes")
-FALSE_TEXTS = ("false", "0", "off", "no")
+"""Text accepted as True for a bool parameter, compared case-insensitively."""
 
-#: Prefixes a reader name is guessed from, where the driver declares nothing.
+FALSE_TEXTS = ("false", "0", "off", "no")
+"""Text accepted as False for a bool parameter, compared case-insensitively."""
+
 READER_PREFIXES = ("get_", "measure_", "read_", "fetch_")
+"""Prefixes a reader name is guessed from, where the driver declares nothing."""
 
 
 @dataclass(frozen=True)
@@ -154,8 +167,8 @@ class Selector:
     """
 
     stateful: bool = False
-    #: Values that reach the same hardware, {value: (other values, ...)}, or the name of a method answering that.
     overlaps: Mapping[Any, Any] | Overlaps | str | None = None
+    """Values that reach the same hardware, {value: (other values, ...)}, or the name of a method answering that."""
 
     def __post_init__(self) -> None:
         """Keep a mapping of overlaps as a tuple of pairs, so the marker stays immutable and hashable."""
@@ -163,8 +176,8 @@ class Selector:
             object.__setattr__(self, "overlaps", freeze_overlaps(self.overlaps))
 
 
-#: Overlaps as a Selector keeps them: ((value, (other values, ...)), ...).
 Overlaps = tuple[tuple[Any, tuple[Any, ...]], ...]
+"""Overlaps as a Selector keeps them: ((value, (other values, ...)), ...)."""
 
 
 def freeze_overlaps(overlaps: object) -> Overlaps:
@@ -223,10 +236,12 @@ class CommandInfo:
     reads: str | None = None
     composite: bool = False
     hazards: tuple[str, ...] = ()
-    #: "read" (a return annotation other than None) or "run" (stated with kind="run") when decorated; "" otherwise:
-    #: set or run then follows from whether a value parameter remains besides the selectors, which are only known
-    #: once their aliases resolve - describe_command decides it.
     kind: str = ""
+    """The kind when decorated: "read" (a return annotation other than None) or "run" (stated with kind="run").
+
+    "" otherwise: set or run then follows from whether a value parameter remains besides the selectors, which are only
+    known once their aliases resolve - describe_command decides it.
+    """
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -239,14 +254,14 @@ class ValueSpec:
     unit: str | None = None
     label: str | None = None
     range: Range | None = None
-    #: For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`).
     items: ValueSpec | None = None
-    #: Marked Selector(): the value addresses a part of the instrument.
+    """For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`)."""
     selector: bool = False
-    #: Marked Selector(stateful=True): the instrument keeps it as a selection, which @command makes when it changes.
+    """Marked Selector(): the value addresses a part of the instrument."""
     stateful: bool = False
-    #: Selector(overlaps=...): values reaching the same hardware as other values, or the method answering them.
+    """Marked Selector(stateful=True): the instrument keeps it as a selection, which @command makes when it changes."""
     overlaps: Overlaps | str | None = None
+    """Selector(overlaps=...): values reaching the same hardware as other values, or the method answering them."""
 
     @property
     def type_name(self) -> str:
@@ -264,8 +279,8 @@ class ParameterSpec:
     value: ValueSpec
     required: bool
     default: Any = None
-    #: It addresses a part of the instrument (Selector(); in a driver without @command a parameter named channel).
     selector: bool = False
+    """It addresses a part of the instrument (Selector(); in a driver without @command a parameter named channel)."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -284,10 +299,10 @@ class CommandSpec:
     declared: bool
     quantity: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
-    #: For a composite: the commands it calls, read from its code (hazards then holds theirs as well).
     calls: tuple[str, ...] = ()
-    #: The names of the parameters that are selectors, in signature order.
+    """For a composite: the commands it calls, read from its code (hazards then holds theirs as well)."""
     selectors: tuple[str, ...] = ()
+    """The names of the parameters that are selectors, in signature order."""
 
 
 # --- annotations -------------------------------------------------------------------------------------------------
@@ -350,8 +365,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
     )
 
 
-#: The containers whose elements a ValueSpec describes with `items`.
 SEQUENCE_ORIGINS = (list, tuple, collections.abc.Sequence)
+"""The containers whose elements a ValueSpec describes with `items`."""
 
 
 def _item_spec(hint: Any) -> ValueSpec | None:  # noqa: ANN401  # any annotation object
@@ -840,10 +855,10 @@ class CommandNotice(UserWarning):
     """The warning a notice raises when nobody collects notices: a script's console shows it."""
 
 
-#: The lists every notice of this context is appended to (collecting_notices), innermost last.
 _COLLECTORS: ContextVar[tuple[list[str], ...]] = ContextVar("pysweepme_notice_collectors", default=())
-#: The notices of the outermost command call running in this context, for its device's `notices`.
+"""The lists every notice of this context is appended to (collecting_notices), innermost last."""
 _CALL_NOTICES: ContextVar[list[str] | None] = ContextVar("pysweepme_call_notices", default=None)
+"""The notices of the outermost command call running in this context, for its device's `notices`."""
 
 
 @contextlib.contextmanager
@@ -879,8 +894,8 @@ def notice(text: str) -> None:
         warnings.warn(text, CommandNotice, stacklevel=_caller_level())
 
 
-#: pysweepme's own folder: its frames are skipped when a notice warning looks for the caller.
 _PACKAGE_FOLDER = Path(__file__).resolve().parent
+"""pysweepme's own folder: its frames are skipped when a notice warning looks for the caller."""
 
 
 def _caller_level() -> int:
@@ -908,8 +923,8 @@ def _caller_level() -> int:
 
 # --- what a composite calls --------------------------------------------------------------------------------------
 
-#: Per driver class, the commands each composite calls - read from the code once.
 _CALLS: weakref.WeakKeyDictionary[type, dict[str, tuple[str, ...]]] = weakref.WeakKeyDictionary()
+"""Per driver class, the commands each composite calls - read from the code once."""
 
 
 def _self_calls(function: Callable[..., Any]) -> list[str]:
@@ -934,14 +949,6 @@ def _self_calls(function: Callable[..., Any]) -> list[str]:
     return list(dict.fromkeys(node.func.attr for node in calls))  # type: ignore[attr-defined]  # checked above
 
 
-def _defined_by_driver(cls: type, name: str) -> bool:
-    """Whether the driver defines this method itself (or a driver base class does), not EmptyDevice or object."""
-    from .EmptyDeviceClass import EmptyDevice  # noqa: PLC0415  # EmptyDeviceClass imports this module lazily too
-
-    owner = next((klass for klass in cls.__mro__ if name in vars(klass)), None)
-    return owner is not None and owner is not object and not issubclass(EmptyDevice, owner)
-
-
 def calls_of(cls: type, name: str) -> tuple[str, ...]:
     """The commands a command calls, read from its code: helpers of the driver are followed, a command stops the walk.
 
@@ -951,6 +958,8 @@ def calls_of(cls: type, name: str) -> tuple[str, ...]:
     known = _CALLS.setdefault(cls, {})
     if name in known:
         return known[name]
+    # EmptyDevice.is_function_overwritten: a helper the driver defines itself is followed, EmptyDevice's API is not
+    overwritten = getattr(cls, "is_function_overwritten", None)
     found: list[str] = []
     seen = {name}
 
@@ -963,7 +972,7 @@ def calls_of(cls: type, name: str) -> tuple[str, ...]:
             member = getattr(cls, called, None)
             if command_info(member) is not None:
                 found.append(called)
-            elif callable(member) and _defined_by_driver(cls, called):
+            elif callable(member) and overwritten is not None and overwritten(called):
                 walk(member)
 
     method = getattr(cls, name, None)
@@ -1024,10 +1033,10 @@ def check_selector_defaults(cls: type) -> None:
 
 # --- selections kept by the instrument ----------------------------------------------------------------------------
 
-#: The class attribute holding a driver class's stateful selectors, {name: ValueSpec}; set when the class is created.
 STATEFUL_ATTRIBUTE = "_stateful_selectors"
-#: Marks an apply_selectors that remembers what it selected.
+"""The class attribute holding a driver class's stateful selectors, {name: ValueSpec}; set when the class is created."""
 REMEMBERS_ATTRIBUTE = "__pysweepme_remembers_selection__"
+"""Marks an apply_selectors that remembers what it selected."""
 
 
 def stateful_selectors(cls: type) -> dict[str, ValueSpec]:

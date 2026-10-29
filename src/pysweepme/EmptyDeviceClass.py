@@ -50,8 +50,8 @@ class EmptyDevice:
     _device_communication: ClassVar[dict[str, Any]] = {}
     _parameter_store: ClassVar[dict[str, Any]] = {}
 
-    #: The notices of the last command called on this instance (notice), replaced by each call; () before any.
     notices: tuple[str, ...] = ()
+    """The notices of the last command called on this instance (notice), replaced by each call; () before any."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Check the driver's commands once the class exists, and complete the composites' hazard sections."""
@@ -105,8 +105,12 @@ class EmptyDevice:
 
         self._latest_parameters: dict[str, Any] | None = None
 
-    def is_function_overwritten(self, function: str) -> bool:
+    @classmethod
+    def is_function_overwritten(cls, function: str) -> bool:
         """Test if a given function is overwritten in a child class of EmptyDevice.
+
+        A class method, so that it also answers for a driver class without an instance (pysweepme's commands module
+        asks it when the class is created); called on an instance it answers for the instance's class.
 
         Args:
             function: The name of the function to check.
@@ -118,10 +122,10 @@ class EmptyDevice:
         # Get the class and a list of all base classes in the order python would resolve functions
         # using getmro(). If function is element of the classes dictionary and a function, BEFORE looking into
         # the EmptyDevice class, then function was obviously overridden by a subclass.
-        for cls in inspect.getmro(self.__class__):
-            if cls is EmptyDevice:
+        for klass in inspect.getmro(cls):
+            if klass is EmptyDevice:
                 break
-            if function in cls.__dict__ and callable(getattr(cls, function, None)):
+            if function in klass.__dict__ and callable(getattr(klass, function, None)):
                 overwrites = True
                 break
 

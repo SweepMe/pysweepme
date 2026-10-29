@@ -663,8 +663,8 @@ class Port:
         self.initialize_port_properties()
 
         self.actualwritetime = time.perf_counter()
-        #: What the instrument has selected (stateful selectors) and which driver selected it; None when unknown.
         self._selection: tuple[str, dict[str, object]] | None = None
+        """What the instrument has selected (stateful selectors) and which driver selected it; None when unknown."""
 
     def __del__(self) -> None:
         pass
