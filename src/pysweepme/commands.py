@@ -958,7 +958,7 @@ def stateful_selectors(cls: type) -> dict[str, ValueSpec]:
 
 
 def prepare_stateful_selectors(cls: type) -> None:
-    """Record the class's stateful selectors and make its apply_selectors remember what it selects.
+    """Record the class's stateful selectors; its apply_selectors remembers them, its connect and disconnect forget.
 
     Called by EmptyDevice.__init_subclass__. A stateful selector the class's apply_selectors cannot take is refused:
     the selection could never be made.
@@ -983,6 +983,36 @@ def prepare_stateful_selectors(cls: type) -> None:
         raise TypeError(msg)
     if not getattr(hook, REMEMBERS_ATTRIBUTE, False):
         setattr(cls, "apply_selectors", _remembering(hook))  # noqa: B010  # a method replaced on the class
+    for name in ("connect", "disconnect"):
+        method = inspect.getattr_static(cls, name, None)
+        if callable(method) and not getattr(method, REMEMBERS_ATTRIBUTE, False):
+            setattr(cls, name, _forgetting(method, at_start=name == "connect"))
+
+
+def _forgetting(method: Callable[..., Any], *, at_start: bool) -> Callable[..., Any]:
+    """Wrap connect or disconnect to forget the selection of the driver's scope: the instrument's is unknown there.
+
+    connect forgets before it runs (the connection is new; what it selects itself is remembered), and once more for a
+    scope it only learns while connecting (a serial number); disconnect forgets after it ran, in the scope it had.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # the method's own result
+        before = selection_scope_of(self)
+        if at_start:
+            forget_scope(before)
+            result = method(self, *args, **kwargs)
+            after = selection_scope_of(self)
+            if after is not None and after is not before and after != before:
+                forget_scope(after)
+            return result
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            forget_scope(before)
+
+    setattr(wrapper, REMEMBERS_ATTRIBUTE, True)
+    return wrapper
 
 
 # --- values reaching the same hardware ----------------------------------------------------------------------------
@@ -1101,38 +1131,64 @@ def _owner(device: Any) -> str:  # noqa: ANN401  # any driver instance
     return f"{getattr(module, '__file__', '') or cls.__module__}:{cls.__qualname__}"
 
 
-def _holder(device: Any) -> Any:  # noqa: ANN401  # a Port, or the driver instance itself
-    """Where the selection is kept: the Port, shared by every instance on the resource; without one the instance."""
+_SCOPED: dict[Any, tuple[str, dict[str, Any]]] = {}
+"""The selections kept per selection scope given as a value (a driver's selection_scope(), e.g. ("labjack", serial))."""
+
+_SCOPED_OBJECTS: weakref.WeakKeyDictionary[Any, tuple[str, dict[str, Any]]] = weakref.WeakKeyDictionary()
+"""The selections kept per scope that is an object (the Port): a new Port starts without a memory."""
+
+
+def selection_scope_of(device: Any) -> Any:  # noqa: ANN401  # a Port, the driver's own key, or None
+    """What shares the instrument's selection: the connection every driver instance on that instrument uses.
+
+    The Port for a driver using the port manager (one Port per resource, shared by every instance); otherwise what the
+    driver's selection_scope() names, like a key of device_communication; None when nothing is named - then nothing
+    is remembered and every command taking a stateful selector selects.
+    """
     port = getattr(device, "port", None)
-    return port if port is not None and callable(getattr(port, "remember_selection", None)) else device
+    if getattr(device, "port_manager", False) and port is not None:
+        return port
+    scope = getattr(device, "selection_scope", None)
+    return scope() if callable(scope) else None
+
+
+def _memory(scope: Any) -> Any:  # noqa: ANN401  # one of the two stores
+    """The store a scope's selection is kept in: weakly for an object that allows it, else by value."""
+    try:
+        weakref.ref(scope)
+    except TypeError:
+        return _SCOPED
+    return _SCOPED_OBJECTS
 
 
 def current_selection(device: Any) -> dict[str, Any]:  # noqa: ANN401  # any driver instance
-    """What the instrument has selected, as far as this driver knows: {} when unknown or selected by another driver."""
-    holder = _holder(device)
-    if holder is device:
-        record = getattr(device, "_selection", None)
-        return dict(record[1]) if record and record[0] == _owner(device) else {}
-    selection: dict[str, Any] = holder.selection(_owner(device))
-    return selection
+    """What the instrument has selected, as far as this driver knows.
+
+    {} when unknown, when another driver class selected, or when the driver names no selection scope.
+    """
+    scope = selection_scope_of(device)
+    if scope is None:
+        return {}
+    record = _memory(scope).get(scope)
+    return dict(record[1]) if record is not None and record[0] == _owner(device) else {}
 
 
 def _remember(device: Any, values: dict[str, Any]) -> None:  # noqa: ANN401  # any driver instance
-    holder = _holder(device)
-    if holder is device:
-        known = current_selection(device)
-        device._selection = (_owner(device), {**known, **values})  # noqa: SLF001  # the memory of a portless driver
-    else:
-        holder.remember_selection(_owner(device), values)
+    """Note what the driver has just selected, in its scope; a selection by another driver class is replaced."""
+    scope = selection_scope_of(device)
+    if scope is not None:
+        _memory(scope)[scope] = (_owner(device), {**current_selection(device), **values})
+
+
+def forget_scope(scope: Any) -> None:  # noqa: ANN401  # a Port, a driver's key, or None
+    """Forget what the instrument of this scope has selected: the next command selects again."""
+    if scope is not None:
+        _memory(scope).pop(scope, None)
 
 
 def forget_selections(device: Any) -> None:  # noqa: ANN401  # any driver instance
-    """Forget what the instrument has selected: the next command selects again."""
-    holder = _holder(device)
-    if holder is device:
-        device._selection = None  # noqa: SLF001  # the memory of a portless driver
-    else:
-        holder.forget_selections()
+    """Forget what the instrument has selected: the next command of every driver on it selects again."""
+    forget_scope(selection_scope_of(device))
 
 
 def _select(device: Any, wanted: dict[str, Any]) -> None:  # noqa: ANN401  # any driver instance

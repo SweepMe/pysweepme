@@ -958,6 +958,12 @@ class Selecting(EmptyDevice):
         """Select the output the next commands act on."""
         self.sent.append(f"INST:OUT{output}")
 
+    def connect(self) -> None:
+        """Nothing to open in the test."""
+
+    def disconnect(self) -> None:
+        """Nothing to close in the test."""
+
     @command
     def set_voltage(self, output: Output, voltage: Volts) -> None:  # noqa: ARG002  # selected by apply_selectors
         """Set the voltage of one output."""
@@ -980,10 +986,16 @@ def shared_port() -> Port:
     return port
 
 
+def on_port(device: Selecting, port: Port) -> Selecting:
+    """The device as the port manager hands it its Port."""
+    device.port_manager = True
+    device.port = port
+    return device
+
+
 def test_a_stateful_selection_is_sent_only_when_it_changes() -> None:
     """One output used: one INST:OUT at the first command; a change of output selects again."""
-    device = Selecting()
-    device.port = shared_port()
+    device = on_port(Selecting(), shared_port())
     device.set_voltage(1, 2.0)
     device.set_voltage(1, 3.0)
     device.get_identification()
@@ -994,16 +1006,14 @@ def test_a_stateful_selection_is_sent_only_when_it_changes() -> None:
 def test_instances_on_one_port_share_the_selection() -> None:
     """Two bench entries on output 1 and 2: each selects again after the other did, never trusting its own memory."""
     port = shared_port()
-    first, second = Selecting(), Selecting()
-    first.port = second.port = port
+    first, second = on_port(Selecting(), port), on_port(Selecting(), port)
     first.set_voltage(1, 1.0)
     second.set_voltage(2, 2.0)
     first.set_voltage(1, 1.5)
     second.set_voltage(2, 2.5)
     assert first.sent == ["INST:OUT1", "VOLT 1.0", "INST:OUT1", "VOLT 1.5"]
     assert second.sent == ["INST:OUT2", "VOLT 2.0", "INST:OUT2", "VOLT 2.5"]
-    third = Selecting()
-    third.port = port
+    third = on_port(Selecting(), port)
     third.set_voltage(2, 0.5)
     assert third.sent == ["VOLT 0.5"]  # the instrument has output 2 selected, whoever selected it
 
@@ -1011,24 +1021,23 @@ def test_instances_on_one_port_share_the_selection() -> None:
 def test_a_selection_by_another_driver_is_unknown() -> None:
     """Another driver class on the same port may mean something else by its selection: select again."""
     port = shared_port()
-    mine, other = Selecting(), OtherSelecting()
-    mine.port = other.port = port
+    mine, other = on_port(Selecting(), port), on_port(OtherSelecting(), port)
     mine.set_voltage(1, 1.0)
     other.set_voltage(1, 1.0)
     assert other.sent == ["INST:OUT1", "VOLT 1.0"]
 
 
 def test_unknown_means_select_again() -> None:
-    """Forgotten after raw traffic, on open and close, by the driver's own reset - and after a failed selection."""
-    device = Selecting()
-    device.port = port = shared_port()
+    """Forgotten by connect and disconnect, by the driver's reset or a host after raw traffic, for every instance."""
+    port = shared_port()
+    device, other = on_port(Selecting(), port), on_port(Selecting(), port)
     device.set_voltage(1, 1.0)
-    for forget in (port.forget_selections, port.open, port.close, device.forget_selections):
+    for forget in (device.connect, device.disconnect, device.forget_selections, other.connect):
         device.sent.clear()
         forget()
         device.set_voltage(1, 1.0)
         assert device.sent == ["INST:OUT1", "VOLT 1.0"], forget
-    assert port.selection("someone else") == {}
+    assert commands.current_selection(on_port(Selecting(), shared_port())) == {}  # a new Port knows nothing
 
 
 def test_a_failed_selection_is_forgotten() -> None:
@@ -1045,8 +1054,7 @@ def test_a_failed_selection_is_forgotten() -> None:
                 raise TimeoutError(msg)
             super().apply_selectors(output)
 
-    device = Failing()
-    device.port = shared_port()
+    device = on_port(Failing(), shared_port())
     with pytest.raises(TimeoutError):
         device.set_voltage(1, 1.0)
     device.set_voltage(1, 1.0)
@@ -1055,19 +1063,71 @@ def test_a_failed_selection_is_forgotten() -> None:
 
 def test_every_selection_is_remembered() -> None:
     """A selection by a semantic function or a host (apply_selectors called directly) is known to the commands."""
-    device = Selecting()
-    device.port = shared_port()
+    device = on_port(Selecting(), shared_port())
     device.apply_selectors(output=3)
     device.set_voltage(3, 1.0)
     assert device.sent == ["INST:OUT3", "VOLT 1.0"]
 
 
-def test_a_driver_without_port_remembers_on_itself() -> None:
-    """No Port (a simulation, an SDK): the memory is the instance's."""
+def test_without_port_manager_or_scope_every_command_selects() -> None:
+    """No Port and no selection_scope: nothing is remembered, so nothing can be stale - one write more per command."""
     device = Selecting()
     device.set_voltage(4, 1.0)
     device.set_voltage(4, 2.0)
-    assert device.sent == ["INST:OUT4", "VOLT 1.0", "VOLT 2.0"]
+    assert device.sent == ["INST:OUT4", "VOLT 1.0", "INST:OUT4", "VOLT 2.0"]
+
+
+class Library(Selecting):
+    """A driver on a library handle that its instances share, named like a key of device_communication."""
+
+    def __init__(self, serial: str | None = "SN7") -> None:
+        """Known by its serial number, or only once connected."""
+        super().__init__()
+        self.serial = serial
+
+    def selection_scope(self) -> tuple[str, str] | None:
+        """The handle of this serial number."""
+        return ("library", self.serial) if self.serial else None
+
+    def connect(self) -> None:
+        """Learn the serial number where it was not known."""
+        self.serial = self.serial or "SN7"
+
+
+def test_instances_sharing_a_selection_scope_share_the_memory() -> None:
+    """Two instances on one handle: each selects again after the other did; a third one knows what is selected."""
+    commands.forget_scope(("library", "SN7"))  # the memory is the process's: start from a known one
+    first, second = Library(), Library()
+    first.set_voltage(1, 1.0)
+    second.set_voltage(2, 2.0)
+    first.set_voltage(1, 1.5)
+    first.set_voltage(1, 1.6)
+    assert first.sent == ["INST:OUT1", "VOLT 1.0", "INST:OUT1", "VOLT 1.5", "VOLT 1.6"]
+    third = Library()
+    third.set_voltage(1, 0.5)
+    assert third.sent == ["VOLT 0.5"]
+    other = Library("SN8")
+    other.set_voltage(1, 0.5)
+    assert other.sent == ["INST:OUT1", "VOLT 0.5"]  # another handle, another memory
+    first.disconnect()
+    third.set_voltage(1, 0.7)
+    assert third.sent == ["VOLT 0.5", "INST:OUT1", "VOLT 0.7"]
+
+
+def test_a_scope_learned_while_connecting_is_forgotten_then() -> None:
+    """A serial number known only after connect: what was remembered under it before is forgotten by connect."""
+    commands.forget_scope(("library", "SN7"))
+    known = Library()
+    known.set_voltage(1, 1.0)
+    late = Library(serial=None)
+    late.connect()
+    known.set_voltage(1, 1.1)
+    assert known.sent == ["INST:OUT1", "VOLT 1.0", "INST:OUT1", "VOLT 1.1"]
+
+
+def test_the_ports_module_knows_nothing_of_selections() -> None:
+    """The memory lives in pysweepme.commands; the Port has no selection methods."""
+    assert not any(hasattr(Port, name) for name in ("selection", "remember_selection", "forget_selections"))
 
 
 def test_a_stateful_selector_needs_apply_selectors_taking_it() -> None:

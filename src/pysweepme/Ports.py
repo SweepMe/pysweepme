@@ -663,8 +663,6 @@ class Port:
         self.initialize_port_properties()
 
         self.actualwritetime = time.perf_counter()
-        self._selection: tuple[str, dict[str, object]] | None = None
-        """What the instrument has selected (stateful selectors) and which driver selected it; None when unknown."""
 
     def __del__(self) -> None:
         pass
@@ -699,7 +697,6 @@ class Port:
         return "not available"
 
     def open(self) -> None:
-        self.forget_selections()  # the instrument may have changed while the port was closed
         self.open_internal()
 
         self.port_properties["open"] = True
@@ -708,26 +705,9 @@ class Port:
         pass
 
     def close(self) -> None:
-        self.forget_selections()
         self.close_internal()
 
         self.port_properties["open"] = False
-
-    def selection(self, owner: str) -> dict[str, object]:
-        """What the instrument has selected, if `owner` (a driver) selected it; {} when unknown or another's.
-
-        Kept by the @command wrapper for Selector(stateful=True); every driver instance on this port shares it.
-        """
-        record = getattr(self, "_selection", None)
-        return dict(record[1]) if record is not None and record[0] == owner else {}
-
-    def remember_selection(self, owner: str, values: dict[str, object]) -> None:
-        """Note what `owner` (a driver) has just selected; a selection by another driver is replaced."""
-        self._selection = (owner, {**self.selection(owner), **values})
-
-    def forget_selections(self) -> None:
-        """Forget what the instrument has selected, e.g. after raw traffic: the next command selects again."""
-        self._selection = None
 
     def close_internal(self) -> None:
         pass
