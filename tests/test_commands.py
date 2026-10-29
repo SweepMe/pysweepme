@@ -186,7 +186,7 @@ def test_command_keeps_the_method() -> None:
 
 def test_command_refuses_wrong_arguments_of_its_own() -> None:
     """The argument returns must be a sequence of names, reads one of the three kinds."""
-    with pytest.raises(TypeError, match="sequence of quantity names"):
+    with pytest.raises(TypeError, match="sequence of names"):
         command(returns="voltage")
     with pytest.raises(ValueError, match="reads must be one of"):
         command(reads="readback")

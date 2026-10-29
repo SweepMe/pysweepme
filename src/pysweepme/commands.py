@@ -668,8 +668,9 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
 
     Args:
         func: The method, when used bare.
-        returns: Quantity names of the answered values, in answer order, e.g. ("voltage", "current"). Required for a
-            reader, not allowed for a setter or an action.
+        returns: Names of the answered values, in answer order: a quantity ("voltage", "current"), or for a state
+            what it is ("identification",), ("trigger_status",). Required for every reader, also with reads="state";
+            not allowed for a setter or an action.
         reads: What a reader reads: "measurement" (the default), "last", "setpoint" (a value a command can set,
             whether or not the instrument also measures it) or "state" (a status or an identity, which no command
             sets).
@@ -687,7 +688,7 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
     for the drivers that do not use it.
     """
     if isinstance(returns, str):
-        msg = f"@command returns must be a sequence of quantity names, e.g. ({returns!r},), not a string."
+        msg = f"@command returns must be a sequence of names, e.g. ({returns!r},), not a string."
         raise TypeError(msg)
     if reads is not None and reads not in READS:
         msg = f"@command reads must be one of {', '.join(READS)}, not {reads!r}."
@@ -769,7 +770,7 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     """Check what a declared command must state and complete it with its kind and the default of reads.
 
     In a declared driver nothing is guessed from method names: a command needs a return annotation, a reader needs
-    the quantity names of its answer in returns, and a reader reads a measurement unless reads says otherwise.
+    the names of its answered values in returns, and a reader reads a measurement unless reads says otherwise.
     """
     name = getattr(method, "__name__", repr(method))
     _check_parameters(name, method)
@@ -780,8 +781,9 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     reader = not _is_none_annotation(annotations["return"])
     if reader and not declared.returns:
         msg = (
-            f"@command {name}: a reader needs returns=(...) with the quantity names of its answer, "
-            f"e.g. returns=('voltage',)."
+            f"@command {name}: a reader needs returns=(...) naming its answered values - a quantity such as "
+            f"returns=('voltage',), or for a state what it is, e.g. returns=('identification',) or "
+            f"returns=('trigger_status',). Instrument Control records and shows the answer under that name."
         )
         raise TypeError(msg)
     if not reader and (declared.returns is not None or declared.reads is not None):
