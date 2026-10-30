@@ -58,7 +58,7 @@ class Declared(EmptyDevice):
         """Set the output voltage."""
         self.calls.append(("set_voltage", (channel, voltage)))
 
-    @command(hazards="FIMV with no load drives the output to compliance.")
+    @command(warnings="FIMV with no load drives the output to compliance.")
     def set_source_mode(self, channel: Channel, mode: SourceMode) -> None:
         """Set the source mode."""
         self.calls.append(("set_source_mode", (channel, mode)))
@@ -113,7 +113,7 @@ class Declared(EmptyDevice):
         """Sweep the voltage from start to stop."""
 
     @command(
-        hazards=(
+        warnings=(
             "Re-enumerates the USB device: the open port is lost.",
             "Resets every setting, also those the driver promised to keep.",
         ),
@@ -192,28 +192,28 @@ def test_command_refuses_wrong_arguments_of_its_own() -> None:
         command(returns="voltage")
     with pytest.raises(ValueError, match="reads must be one of"):
         command(reads="readback")
-    with pytest.raises(TypeError, match="hazards must be a text"):
-        command(hazards=("fine", 3))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="warnings must be a text"):
+        command(warnings=("fine", 3))  # type: ignore[arg-type]
 
 
-def test_hazards_are_metadata_and_shown_by_help() -> None:
-    """Hazards are stored as a tuple of texts and appended to the docstring as a Hazards section."""
+def test_warnings_are_metadata_and_shown_by_help() -> None:
+    """Warnings are stored as a tuple of texts and appended to the docstring as a Warnings section."""
     assert command_info(Declared.set_source_mode) == CommandInfo(
-        hazards=("FIMV with no load drives the output to compliance.",),
+        warnings=("FIMV with no load drives the output to compliance.",),
     )
     assert inspect.getdoc(Declared.reset) == (
-        "Reset the instrument.\n\nA longer explanation of the reset.\n\nHazards:\n"
+        "Reset the instrument.\n\nA longer explanation of the reset.\n\nWarnings:\n"
         "    Re-enumerates the USB device: the open port is lost.\n"
         "    Resets every setting, also those the driver promised to keep."
     )
     assert inspect.getdoc(Declared.set_voltage) == "Set the output voltage."
 
-    @command(hazards="  A text   wrapped\n   over lines.  ")
+    @command(warnings="  A text   wrapped\n   over lines.  ")
     def undocumented() -> None:
         pass
 
-    assert command_info(undocumented) == CommandInfo(hazards=("A text wrapped over lines.",))
-    assert undocumented.__doc__ == "Hazards:\n    A text wrapped over lines."
+    assert command_info(undocumented) == CommandInfo(warnings=("A text wrapped over lines.",))
+    assert undocumented.__doc__ == "Warnings:\n    A text wrapped over lines."
 
 
 def test_declared_command_must_state_what_it_is() -> None:
@@ -601,25 +601,25 @@ def test_kind_run_for_an_action_with_parameters() -> None:
         command(kind="set")
 
 
-def test_description_and_hazards() -> None:
-    """The description is the first docstring line, the hazards come from @command."""
+def test_description_and_warnings() -> None:
+    """The description is the first docstring line, the warnings come from @command."""
     device = Declared()
     assert spec_of(device, "set_voltage").description == "Set the output voltage."
-    assert spec_of(device, "set_voltage").hazards == ()
-    assert spec_of(device, "set_source_mode").hazards == ("FIMV with no load drives the output to compliance.",)
+    assert spec_of(device, "set_voltage").warnings == ()
+    assert spec_of(device, "set_source_mode").warnings == ("FIMV with no load drives the output to compliance.",)
     assert spec_of(device, "reset").description == "Reset the instrument."
-    assert len(spec_of(device, "reset").hazards) == 2  # noqa: PLR2004  # the two hazards declared above
+    assert len(spec_of(device, "reset").warnings) == 2  # noqa: PLR2004  # the two warnings declared above
     assert description_of(lambda: None) == ""
 
 
 class Composed(EmptyDevice):
     """A driver whose composites call commands directly, through a helper and through each other."""
 
-    @command(hazards="HIGH drives the output to compliance.")
+    @command(warnings="HIGH drives the output to compliance.")
     def set_range(self, range_type: Literal["AUTO", "HIGH"]) -> None:
         """Set the range."""
 
-    @command(hazards=("Drops the USB connection.",))
+    @command(warnings=("Drops the USB connection.",))
     def reset(self) -> None:
         """Reset the instrument."""
 
@@ -637,7 +637,7 @@ class Composed(EmptyDevice):
         self._prepare()
         self.set_level(0.0)
 
-    @command(composite=True, hazards="Sends its own raw commands.")
+    @command(composite=True, warnings="Sends its own raw commands.")
     def ramp(self, level: float) -> None:
         """Start over, then go to the level."""
         self.start_over()
@@ -650,41 +650,41 @@ class Composed(EmptyDevice):
         getattr(self, "reset")()  # noqa: B009  # the case the code cannot show
 
 
-def test_a_composite_inherits_the_hazards_of_what_it_calls() -> None:
-    """A composite's calls are read from its code, helpers followed; their hazards are added with their origin."""
+def test_a_composite_inherits_the_warnings_of_what_it_calls() -> None:
+    """A composite's calls are read from its code, helpers followed; their warnings are added with their origin."""
     device = Composed()
     start_over = spec_of(device, "start_over")
     assert start_over.calls == ("reset", "set_range", "set_level")
-    assert start_over.hazards == (
+    assert start_over.warnings == (
         "reset: Drops the USB connection.",
         "set_range: HIGH drives the output to compliance.",
     )
     ramp = spec_of(device, "ramp")
     assert ramp.calls == ("start_over", "set_level")
-    assert ramp.hazards == (
+    assert ramp.warnings == (
         "Sends its own raw commands.",
         "reset: Drops the USB connection.",
         "set_range: HIGH drives the output to compliance.",
     )
     assert spec_of(device, "by_name").calls == ()
-    assert spec_of(device, "by_name").hazards == ()
+    assert spec_of(device, "by_name").warnings == ()
     assert spec_of(device, "set_range").calls == ()
-    assert spec_of(device, "set_range").hazards == ("HIGH drives the output to compliance.",)
+    assert spec_of(device, "set_range").warnings == ("HIGH drives the output to compliance.",)
 
 
-def test_inherited_hazards_reach_the_docstring() -> None:
-    """help() shows a composite's inherited hazards too, completed when the driver class is created."""
+def test_inherited_warnings_reach_the_docstring() -> None:
+    """help() shows a composite's inherited warnings too, completed when the driver class is created."""
     doc = inspect.getdoc(Composed.ramp) or ""
     assert doc.startswith("Start over, then go to the level.")
-    assert "Hazards:" in doc
+    assert "Warnings:" in doc
     assert "Sends its own raw commands." in doc
     assert "reset: Drops the USB connection." in doc
     assert "set_range: HIGH drives the output to compliance." in doc
-    assert "Hazards:" not in (inspect.getdoc(Composed.by_name) or "")
+    assert "Warnings:" not in (inspect.getdoc(Composed.by_name) or "")
 
 
 def test_a_composite_of_a_subclass_inherits_from_the_base() -> None:
-    """A composite calling commands its base class defines inherits their hazards as well."""
+    """A composite calling commands its base class defines inherits their warnings as well."""
 
     class Child(Composed):
         @command(composite=True)
@@ -692,7 +692,7 @@ def test_a_composite_of_a_subclass_inherits_from_the_base() -> None:
             """Reset and set the range."""
             self.reset()
 
-    assert spec_of(Child(), "restart").hazards == ("reset: Drops the USB connection.",)
+    assert spec_of(Child(), "restart").warnings == ("reset: Drops the USB connection.",)
     assert "reset: Drops the USB connection." in (inspect.getdoc(Child.restart) or "")
 
 
@@ -1426,7 +1426,7 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
         "check_command_overrides",
         "check_selector_defaults",
         "check_selector_overlaps",
-        "complete_hazard_sections",
+        "complete_warning_sections",
         "prepare_stateful_selectors",
     ):
         monkeypatch.setattr(commands, check, refuse)

@@ -248,7 +248,7 @@ class CommandInfo:
     returns: tuple[str, ...] | None = None
     reads: str | None = None
     composite: bool = False
-    hazards: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
     kind: str = ""
     """The kind when decorated: "read" (a return annotation other than None) or "run" (stated with kind="run").
 
@@ -306,7 +306,7 @@ class CommandSpec:
 
     name: str
     description: str
-    hazards: tuple[str, ...]
+    warnings: tuple[str, ...]
     parameters: tuple[ParameterSpec, ...]
     kind: str
     returns: tuple[str, ...]
@@ -317,7 +317,7 @@ class CommandSpec:
     quantity: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
     calls: tuple[str, ...] = ()
-    """For a composite: the commands it calls, read from its code (hazards then holds theirs as well)."""
+    """For a composite: the commands it calls, read from its code (warnings then holds theirs as well)."""
     selectors: tuple[str, ...] = ()
     """The names of the parameters that are selectors, in signature order."""
 
@@ -728,7 +728,7 @@ def command(
     returns: Sequence[str] | None = None,
     reads: str | None = None,
     composite: bool = False,
-    hazards: str | Sequence[str] | None = None,
+    warnings: str | Sequence[str] | None = None,
     kind: str | None = None,
 ) -> Callable[[F], F]: ...
 
@@ -740,7 +740,7 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
     returns: Sequence[str] | None = None,
     reads: str | None = None,
     composite: bool = False,
-    hazards: str | Sequence[str] | None = None,
+    warnings: str | Sequence[str] | None = None,
     kind: str | None = None,
 ) -> F | Callable[[F], F]:
     """Mark a driver method as a communication command and check its arguments on every call.
@@ -759,8 +759,8 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
             whether or not the instrument also measures it) or "state" (a status or an identity, which no command
             sets).
         composite: True for a higher-level function that calls other commands, not one instrument command.
-        hazards: What can go wrong when the command is called, in plain text: one string, or one string per hazard.
-            They are appended to the docstring as a "Hazards:" section, so that help() shows them.
+        warnings: What can go wrong when the command is called, in plain text: one string, or one string per warning.
+            They are appended to the docstring as a "Warnings:" section, so that help() shows them.
         kind: "run" for an action that takes parameters, e.g. start_stream(pins, scan_rate): the signature alone
             would make it a setter. Not allowed for a reader. Without it, a command that takes a value sets and one
             that takes none runs.
@@ -787,12 +787,12 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         returns=tuple(returns) if returns is not None else None,
         reads=reads,
         composite=bool(composite),
-        hazards=_hazards(hazards),
+        warnings=_warnings(warnings),
         kind=kind or "",
     )
 
     def decorate(method: F) -> F:
-        """Check the declaration, wrap the method, attach the metadata and show the hazards in the docstring."""
+        """Check the declaration, wrap the method, attach the metadata and show the warnings in the docstring."""
         if isinstance(method, (staticmethod, classmethod, property)):
             msg = (
                 f"@command {type(method).__name__}: a command is a plain instance method (def name(self, ...)), "
@@ -802,8 +802,8 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         info = _completed(method, declared)
         wrapped = _checked(method)
         setattr(wrapped, COMMAND_ATTRIBUTE, info)
-        if info.hazards:
-            wrapped.__doc__ = _with_hazards(method.__doc__, info.hazards)
+        if info.warnings:
+            wrapped.__doc__ = _with_warnings(method.__doc__, info.warnings)
         return wrapped
 
     if func is not None:
@@ -881,21 +881,21 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     return declared  # kind "run" if stated, else set or run by its parameters, decided by describe_command
 
 
-def _hazards(hazards: str | Sequence[str] | None) -> tuple[str, ...]:
-    """The hazards as a tuple of non-empty texts; refuse anything that is not text."""
-    if hazards is None:
+def _warnings(warnings: str | Sequence[str] | None) -> tuple[str, ...]:
+    """The warnings as a tuple of non-empty texts; refuse anything that is not text."""
+    if warnings is None:
         return ()
-    items = (hazards,) if isinstance(hazards, str) else tuple(hazards)
+    items = (warnings,) if isinstance(warnings, str) else tuple(warnings)
     if not all(isinstance(item, str) for item in items):
-        msg = "@command hazards must be a text or a sequence of texts."
+        msg = "@command warnings must be a text or a sequence of texts."
         raise TypeError(msg)
     return tuple(text for item in items if (text := " ".join(item.split())))
 
 
-def _with_hazards(doc: str | None, hazards: Sequence[str]) -> str:
-    """A docstring with the hazards as a "Hazards:" section at its end, so that help() shows them."""
-    section = "\n".join(f"    {hazard}" for hazard in hazards)
-    return f"{inspect.cleandoc(doc or '')}\n\nHazards:\n{section}".lstrip()
+def _with_warnings(doc: str | None, warnings: Sequence[str]) -> str:
+    """A docstring with the warnings as a "Warnings:" section at its end, so that help() shows them."""
+    section = "\n".join(f"    {warning}" for warning in warnings)
+    return f"{inspect.cleandoc(doc or '')}\n\nWarnings:\n{section}".lstrip()
 
 
 def command_info(method: object) -> CommandInfo | None:
@@ -981,27 +981,27 @@ def calls_of(cls: type, name: str) -> tuple[str, ...]:
     return known[name]
 
 
-def _hazard_origins(cls: type, name: str, stack: frozenset[str]) -> list[tuple[str, str]]:
-    """(command, hazard) for a command's own hazards and, for a composite, those of every command it calls."""
+def _warning_origins(cls: type, name: str, stack: frozenset[str]) -> list[tuple[str, str]]:
+    """(command, warning) for a command's own warnings and, for a composite, those of every command it calls."""
     info = command_info(getattr(cls, name, None))
     if info is None:
         return []
-    pairs = [(name, hazard) for hazard in info.hazards]
+    pairs = [(name, warning) for warning in info.warnings]
     if info.composite:
         for called in calls_of(cls, name):
             if called in stack:
                 continue  # a cycle: what it brings is already being collected
-            for pair in _hazard_origins(cls, called, stack | {called}):
+            for pair in _warning_origins(cls, called, stack | {called}):
                 if pair not in pairs:
                     pairs.append(pair)
     return pairs
 
 
-def hazards_of(cls: type, name: str) -> tuple[str, ...]:
-    """A command's hazards: its own, then those a composite inherits, each prefixed with the command it comes from."""
+def warnings_of(cls: type, name: str) -> tuple[str, ...]:
+    """A command's warnings: its own, then those a composite inherits, each prefixed with the command it comes from."""
     return tuple(
-        hazard if origin == name else f"{origin}: {hazard}"
-        for origin, hazard in _hazard_origins(cls, name, frozenset({name}))
+        warning if origin == name else f"{origin}: {warning}"
+        for origin, warning in _warning_origins(cls, name, frozenset({name}))
     )
 
 
@@ -1346,8 +1346,8 @@ def check_command_overrides(cls: type) -> None:
                 break
 
 
-def complete_hazard_sections(cls: type) -> None:
-    """Show the inherited hazards in the docstrings of the composites a driver class defines.
+def complete_warning_sections(cls: type) -> None:
+    """Show the inherited warnings in the docstrings of the composites a driver class defines.
 
     Called by EmptyDevice.__init_subclass__: only once the class body ran are the commands a composite calls there.
     """
@@ -1355,9 +1355,9 @@ def complete_hazard_sections(cls: type) -> None:
         info = command_info(member)
         if info is None or not info.composite:
             continue
-        hazards = hazards_of(cls, name)
-        if hazards != info.hazards:
-            member.__doc__ = _with_hazards(inspect.unwrap(member).__doc__, hazards)
+        warnings = warnings_of(cls, name)
+        if warnings != info.warnings:
+            member.__doc__ = _with_warnings(inspect.unwrap(member).__doc__, warnings)
 
 
 # --- describe_commands -------------------------------------------------------------------------------------------
@@ -1510,7 +1510,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
     return CommandSpec(
         name=name,
         description=description,
-        hazards=hazards_of(type(device), name) if info else (),
+        warnings=warnings_of(type(device), name) if info else (),
         parameters=tuple(parameters),
         kind=kind,
         returns=returns,
