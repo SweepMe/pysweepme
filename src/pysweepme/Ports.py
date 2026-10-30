@@ -25,11 +25,15 @@ import contextlib
 import re
 import socket
 import time
-from typing import TypedDict
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypedDict, final
 
 import psutil
 
 from .ErrorMessage import debug, error
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 # import subprocess  # needed for TCPIP to find IP addresses
 
@@ -635,8 +639,70 @@ class MessageLengthError(ValueError):
         super().__init__(msg)
 
 
+class TraceEvent(TypedDict):
+    """A single port I/O event emitted to trace subscribers.
+
+    Fields:
+        t: ``time.time()`` at emission (after the I/O attempt).
+        direction: The public method that did the I/O: ``"write"``, ``"read"``, ``"write_raw"``, ``"read_raw"`` or
+            ``"read_bytes"``.
+        payload: For ``write``/``read`` events this is the ``str`` command sent or response received (post ``rstrip``
+            for reads). For the raw events it is the ``bytes`` sent or received (or whatever object the device
+            returned).
+        port: The resource string of the port (``port_ID``).
+        ok: ``False`` when the underlying I/O raised — the event is still emitted, so consumers can show errors.
+        err: ``str(exception)`` when ``ok`` is ``False``, else ``None``.
+    """
+
+    t: float
+    direction: str
+    payload: object  # str | bytes | object — kept loose so subclasses can emit non-str payloads.
+    port: str
+    ok: bool
+    err: str | None
+
+
+TraceCallback = Callable[[TraceEvent], None]
+
+
+@final
+class _TracedIO:
+    """One call of a public I/O method of a Port, reported to the trace subscribers of the port when the call ends.
+
+    Used as ``with self._traced(direction, payload) as call:``. A read sets ``call.payload`` to what it received. An
+    exception raised in the block is reported with ``ok=False`` and its text, and then propagates.
+    """
+
+    __slots__ = ("_emit", "direction", "payload")
+
+    def __init__(self, emit: Callable[..., None], direction: str, payload: object) -> None:
+        """Keep the emit method of the port, the direction and the payload known so far."""
+        self._emit = emit
+        self.direction = direction
+        self.payload = payload
+
+    def __enter__(self) -> _TracedIO:
+        """Return this call, so that a read can set the payload it received."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Report the call, failed if an exception is propagating; the exception is not suppressed."""
+        self._emit(self.direction, self.payload, ok=exc is None, err=None if exc is None else str(exc))
+
+
 class Port:
     """base class for any port."""
+
+    # Subscribers receive a TraceEvent for every I/O on this port. Without subscribers, a call costs a small _TracedIO
+    # and one truthiness check, and no event is built. Subscribing replaces the tuple instead of changing it: the empty
+    # class-level default is never shared by two ports, it serves subclasses that bypass __init__ as well, and a
+    # callback that unsubscribes while the tuple is iterated does not disturb the iteration.
+    _trace_subscribers: tuple[TraceCallback, ...] = ()
 
     def __init__(self, ID: str) -> None:
         self.port: object = None
@@ -723,13 +789,73 @@ class Port:
         """Print debug information for the port."""
         debug(f"{self.port_properties['ID']} {msg}")
 
+    def subscribe_trace(self, callback: TraceCallback) -> None:
+        """Register ``callback`` to receive a ``TraceEvent`` for every I/O on this port.
+
+        Subscribers are invoked synchronously when the write/read ends, also when it raises, so failed I/O is reported
+        too (with ``ok=False``). A callback already in the subscriber list is not registered twice. A callback that
+        raises is unsubscribed and the failure logged via ``ErrorMessage.error``, so a broken listener can neither
+        interrupt the driver nor fail again on every following I/O; subscribe again once it is healthy.
+        """
+        if callback not in self._trace_subscribers:
+            self._trace_subscribers = (*self._trace_subscribers, callback)
+
+    def unsubscribe_trace(self, callback: TraceCallback) -> None:
+        """Unregister a previously-subscribed ``callback``. No-op if not registered."""
+        if callback in self._trace_subscribers:
+            self._trace_subscribers = tuple(cb for cb in self._trace_subscribers if cb != callback)
+
+    def _traced(self, direction: str, payload: object) -> _TracedIO:
+        """Return the context of one public I/O call, which reports the call to the trace subscribers when it ends.
+
+        Args:
+            direction: The public method doing the I/O, e.g. "write"; becomes the direction of the TraceEvent.
+            payload: What is sent. A read passes an empty payload and sets what it received.
+        """
+        return _TracedIO(self._emit_trace, direction, payload)
+
+    def _emit_trace(
+        self,
+        direction: str,
+        payload: object,
+        *,
+        ok: bool = True,
+        err: str | None = None,
+    ) -> None:
+        """Fan a trace event out to all subscribers; without subscribers, return before an event is built."""
+        if not self._trace_subscribers:
+            return
+        event: TraceEvent = {
+            "t": time.time(),
+            "direction": direction,
+            "payload": payload,
+            "port": str(self.port_properties.get("ID", "")),
+            "ok": ok,
+            "err": err,
+        }
+        # the tuple is replaced, never changed, so a callback can safely unsubscribe itself
+        for cb in self._trace_subscribers:
+            try:
+                cb(event)
+            except Exception:  # noqa: BLE001, PERF203 — a listener bug must not crash the driver or skip others
+                # Drop the offending subscriber instead of keeping it. A subscriber that raises once almost always
+                # raises every time — the common case is a GUI consumer whose underlying widget was destroyed while
+                # still subscribed. Keeping it registered turned one dead listener into a traceback per read and per
+                # write for the rest of the measurement, drowning the debug log.
+                self.unsubscribe_trace(cb)
+                error(
+                    f"Port trace subscriber for {self.port_ID} raised and was unsubscribed. "
+                    f"Re-subscribe once the consumer is healthy again.",
+                )
+
     def write(self, cmd: str) -> None:
         """Write a command via a port."""
         if self.port_properties["debug"]:
             self.debug(f"write: {cmd!r}")
 
         if cmd != "":
-            self.write_internal(cmd)
+            with self._traced("write", cmd):
+                self.write_internal(cmd)
 
     def write_internal(self, cmd: str) -> None:
         """Function to be overwritten by each port to define how to write a command."""
@@ -758,7 +884,8 @@ class Port:
             self.debug(f"write_raw: {cmd!r}")
 
         if cmd:
-            self.write_raw_internal(cmd)
+            with self._traced("write_raw", cmd):
+                self.write_raw_internal(cmd)
 
     def write_raw_internal(self, cmd: bytes) -> None:
         """Function to be overwritten by each port to define how to write bytes unchanged."""
@@ -778,17 +905,19 @@ class Port:
                 if decoding or stripping shortened it, unless the port property 'Exception' is False. To read a
                 number of bytes without decoding and stripping, use read_bytes().
         """
-        answer = self.read_internal(digits)
-        received = answer
+        with self._traced("read", "") as call:
+            answer = self.read_internal(digits)
+            received = answer
 
-        # with 'raw_read', everything should be returned.
-        if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
-            answer = answer.rstrip()
+            # with 'raw_read', everything should be returned.
+            if self.port_properties["rstrip"] and not self.port_properties["raw_read"]:
+                answer = answer.rstrip()
+            call.payload = answer
 
-        if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
-            debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
+            if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
+                debug(" ".join([self.port_properties["ID"], "read:", repr(answer)]))
 
-        self.check_read_length(digits, received, answer)
+            self.check_read_length(digits, received, answer)
 
         # each port must decide on its own whether an empty string is a timeout error or not
         # if answer == "" and self.port_properties["Exception"] == True:
@@ -825,9 +954,12 @@ class Port:
             The bytes as received.
         """
         if digits > 0:
+            # returned before the trace event of read_raw(), so that this is reported once, as the read_bytes() it is
             return self.read_bytes(digits)
 
-        answer = self.read_raw_internal()
+        with self._traced("read_raw", b"") as call:
+            answer = self.read_raw_internal()
+            call.payload = answer
 
         if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
             debug(" ".join([self.port_properties["ID"], "read_raw:", repr(answer)]))
@@ -864,7 +996,11 @@ class Port:
             IncompleteMessageError: If the bytes, or with break_on_termchar the end of the message, do not arrive in
                 time. It is a TimeoutError and contains the bytes received so far.
         """
-        answer = self.read_bytes_internal(count, break_on_termchar=break_on_termchar) if count > 0 else b""
+        answer = b""
+        if count > 0:
+            with self._traced("read_bytes", b"") as call:
+                answer = self.read_bytes_internal(count, break_on_termchar=break_on_termchar)
+                call.payload = answer
 
         if self.port_properties["debug"] and isinstance(self.port_properties["ID"], str):
             debug(" ".join([self.port_properties["ID"], "read_bytes:", repr(answer)]))
