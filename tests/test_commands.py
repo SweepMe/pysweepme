@@ -16,6 +16,7 @@ from pysweepme.commands import (
     COMMAND_ATTRIBUTE,
     CommandError,
     CommandInfo,
+    Elements,
     Label,
     Range,
     Selector,
@@ -750,6 +751,120 @@ def test_list_elements_are_checked() -> None:
     assert device.levels is array  # checked, handed on as it is
     with pytest.raises(ValueError, match="is outside"):
         device.set_levels(np.array([[1.0, 9.0]]))
+
+
+Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
+
+
+def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
+    """A unit, label or range on a list, tuple or array would leave open whether it means the whole or each element."""
+    np = pytest.importorskip("numpy")
+    with pytest.raises(TypeError, match=r"set_levels: levels has Unit\(symbol='V'\) on a list, tuple or array"):
+
+        class OnList(EmptyDevice):
+            @command
+            def set_levels(self, levels: Annotated[list[float], Unit("V")]) -> None:
+                """Set the levels."""
+
+    with pytest.raises(TypeError, match="get_size: its return value has Unit"):
+
+        class OnTuple(EmptyDevice):
+            @command(returns=("size",))
+            def get_size(self) -> Annotated[tuple[float, float, float], Unit("m")]:
+                """Read the size."""
+                return (1.0, 2.0, 3.0)
+
+    with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
+
+        class OnArray(EmptyDevice):
+            Frequencies = Annotated[np.ndarray, Range(0, None)]
+
+            @command(returns=("frequency",))
+            def get_frequencies(self) -> Frequencies:
+                """Read the frequencies."""
+                return np.zeros(2)
+
+    class Undeclared(EmptyDevice):
+        def get_levels(self) -> Annotated[list[float], Unit("V")]:
+            """A driver without @command is not checked."""
+            return [1.0]
+
+    assert Undeclared().get_levels() == [1.0]
+
+
+def test_a_series_carries_the_unit_of_its_elements() -> None:
+    """list[Volts] and an array with Elements(Hertz) are series in V and Hz; a list of pairs answers one series each."""
+    np = pytest.importorskip("numpy")
+
+    class Spectrum(EmptyDevice):
+        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
+        Powers = Annotated[np.ndarray, Elements(RfPower)]
+
+        @command(returns=("voltage",))
+        def get_trace(self) -> list[Volts]:
+            """Read a trace."""
+            return [1.0, 2.0]
+
+        @command(returns=("frequency", "power"))
+        def get_spectrum(self) -> tuple[Frequencies, Powers]:
+            """Read a spectrum as two arrays."""
+            return np.zeros(2), np.zeros(2)
+
+        @command(returns=("frequency", "voltage"))
+        def get_pairs(self) -> list[tuple[Hertz, Volts]]:
+            """Read frequency-voltage pairs."""
+            return [(1.0, 0.5)]
+
+    specs = {spec.name: spec for spec in describe_commands(Spectrum())}
+    trace = specs["get_trace"].return_values
+    assert [(v.unit, v.items.unit if v.items else None) for v in trace] == [("V", "V")]
+    spectrum = specs["get_spectrum"]
+    assert [v.unit for v in spectrum.return_values] == ["Hz", "dBm"]
+    assert spectrum.labels == {"frequency": "Frequency", "power": "RF power"}
+    pairs = specs["get_pairs"]
+    assert [(v.unit, v.items.unit if v.items else None) for v in pairs.return_values] == [("Hz", "Hz"), ("V", "V")]
+    assert pairs.labels == {"frequency": "Frequency", "voltage": "Voltage"}
+
+
+def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
+    """Each member of tuple[A, B] is checked against its own annotation, also inside a list and an array of rows."""
+    np = pytest.importorskip("numpy")
+
+    class Points(EmptyDevice):
+        Point = tuple[Hertz, Annotated[Volts, Range(0.0, 5.0)]]
+        Rows = Annotated[np.ndarray, Elements(Point)]
+
+        @command
+        def set_point(self, point: Point) -> None:
+            """Set one point."""
+            self.point = point
+
+        @command
+        def set_points(self, points: list[Point]) -> None:
+            """Set a list of points."""
+            self.points = points
+
+        @command
+        def set_rows(self, rows: Rows) -> None:
+            """Set an array of rows."""
+            self.rows = rows
+
+    device = Points()
+    device.set_point(("1e3", 2))  # type: ignore[arg-type]
+    assert device.point == (1000.0, 2.0)
+    with pytest.raises(ValueError, match=r"set_point: point\[1\] 9\.0 is outside 0(\.0)? \.\.\. 5(\.0)? V\."):
+        device.set_point((1.0, 9.0))
+    with pytest.raises(ValueError, match="has 3 values, not 2"):
+        device.set_point((1.0, 2.0, 3.0))  # type: ignore[arg-type]
+    device.set_points([[10, "1.5"], (20, 2)])  # type: ignore[list-item]
+    assert device.points == [[10.0, 1.5], (20.0, 2.0)]
+    with pytest.raises(ValueError, match=r"points\[1\]\[1\] 7\.0 is outside"):
+        device.set_points([(1.0, 1.0), (2.0, 7.0)])
+    rows = np.array([[1.0, 1.0], [2.0, 3.0]])
+    device.set_rows(rows)
+    assert device.rows is rows
+    with pytest.raises(ValueError, match=r"rows\[1\]\[1\] 8\.0 is outside"):
+        device.set_rows(np.array([[1.0, 1.0], [2.0, 8.0]]))
 
 
 def test_command_refuses_what_cannot_be_called_by_name() -> None:

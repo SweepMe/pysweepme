@@ -34,6 +34,9 @@ written on the value with standard Python annotations, and everything of it is i
     def set_voltage(self, channel: int, voltage: Annotated[Volts, Range(-20.0, 20.0)]) -> None:
         ...
 
+A unit, label or range belongs to a single value, never to a list, tuple or array: a sequence says it with its element
+type (`list[Volts]`, `list[tuple[Hertz, Volts]]`), and an array, which has none, with `Elements(Hertz)`.
+
 `@command` marks the method as a command and checks its arguments on every call against these annotations.
 `describe_commands` reads the commands of a driver instance for SweepMe!, Instrument Control and scripts alike.
 """
@@ -79,6 +82,7 @@ __all__ = [
     "CommandError",
     "CommandInfo",
     "CommandSpec",
+    "Elements",
     "Label",
     "ParameterSpec",
     "Range",
@@ -138,6 +142,19 @@ class Label:
     """The text shown for a value, where the one derived from its quantity name is wrong."""
 
     text: str
+
+
+@dataclass(frozen=True)
+class Elements:
+    """The annotation of each element of an array, which has no element type of its own to carry it.
+
+    `Annotated[np.ndarray, Elements(Hertz)]` is an array of frequencies; `Elements(tuple[Hertz, Volts])` an array whose
+    rows are a frequency and a voltage. A list or tuple says the same with its element type (`list[Hertz]`). A Unit,
+    Label or Range written on the array itself is refused when the driver is loaded: it would leave open whether it
+    means the whole value or each element.
+    """
+
+    hint: Any
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -248,10 +265,14 @@ class ValueSpec:
     optional: bool = False
     choices: tuple[Any, ...] | None = None
     unit: str | None = None
+    """The unit of the value; for a sequence of single values (`list[Volts]`, `Elements(Hertz)`) that of each one."""
     label: str | None = None
+    """The label of the value; for a sequence of single values that of each element, like the unit."""
     range: Range | None = None
     items: ValueSpec | None = None
-    """For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`)."""
+    """For a list, a variadic tuple, a Sequence or an array with Elements: the spec of each element (`list[Volts]`)."""
+    members: tuple[ValueSpec, ...] | None = None
+    """For a tuple of fixed length: the spec of each member, in order (`tuple[Hertz, Volts]`)."""
     selector: bool = False
     """Marked Selector(): the value addresses a part of the instrument."""
     stateful: bool = False
@@ -310,11 +331,12 @@ def _is_union(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
 
 
 def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
-    """Split an annotation into type, Literal choices and the Unit, Label, Range and Selector markers."""
+    """Split an annotation into type, Literal choices, elements or members, and the Unit, Label, Range and Selector."""
     unit = label = None
     value_range = None
     selector = stateful = False
     overlaps: Overlaps | str | None = None
+    elements: Any = None
     if get_origin(hint) is Annotated:
         hint, *metadata = get_args(hint)
         for item in metadata:
@@ -324,6 +346,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label = item.text
             elif isinstance(item, Range):
                 value_range = item
+            elif isinstance(item, Elements):
+                elements = item.hint
             elif isinstance(item, Selector):
                 # kept as pairs by Selector.__post_init__
                 selector, stateful, overlaps = True, item.stateful, cast("Overlaps | str | None", item.overlaps)
@@ -341,20 +365,24 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label=label or inner.label,
                 range=value_range or inner.range,
                 items=inner.items,
+                members=inner.members,
                 selector=selector or inner.selector,
                 stateful=stateful or inner.stateful,
                 overlaps=overlaps if overlaps is not None else inner.overlaps,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
+    items = value_spec(elements) if elements is not None else _item_spec(hint)
     return ValueSpec(
         type=None if choices is not None else hint,
         optional=optional,
         choices=choices,
-        unit=unit,
-        label=label,
+        # A sequence of single values is in the unit of its elements: the unit of the quantity it is a series of.
+        unit=unit or (items.unit if items is not None else None),
+        label=label or (items.label if items is not None else None),
         range=value_range,
-        items=_item_spec(hint),
+        items=items,
+        members=_member_specs(hint),
         selector=selector,
         stateful=stateful,
         overlaps=overlaps,
@@ -373,6 +401,43 @@ def _item_spec(hint: Any) -> ValueSpec | None:  # noqa: ANN401  # any annotation
     if get_origin(hint) is tuple:
         return value_spec(members[0]) if len(members) == 2 and members[1] is Ellipsis else None  # noqa: PLR2004
     return value_spec(members[0]) if len(members) == 1 else None
+
+
+def _member_specs(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  # any annotation object
+    """The spec of each member of a tuple of fixed length, `tuple[Hertz, Volts]`; None for anything else."""
+    if get_origin(hint) is not tuple:
+        return None
+    members = get_args(hint)
+    if not members or members[-1] is Ellipsis:
+        return None
+    return tuple(value_spec(member) for member in members)
+
+
+def _is_container(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
+    """Whether an annotation is a list, tuple, Sequence or array: something that holds values rather than is one."""
+    origin = get_origin(hint) or hint
+    if origin in SEQUENCE_ORIGINS:
+        return True
+    return getattr(origin, "__name__", "") == "ndarray"  # numpy's, without importing NumPy
+
+
+def _marker_on_container(hint: Any) -> str | None:  # noqa: ANN401  # any annotation object
+    """The first Unit, Label or Range written on a container anywhere in an annotation, as text; None if none is."""
+    if get_origin(hint) is Annotated:
+        base, *metadata = get_args(hint)
+        markers = [item for item in metadata if isinstance(item, (Unit, Label, Range))]
+        if markers and _is_container(base):
+            return repr(markers[0])
+        inner = [base] + [item.hint for item in metadata if isinstance(item, Elements)]
+    elif get_origin(hint) is Literal:
+        return None
+    else:
+        inner = list(get_args(hint))
+    for part in inner:
+        found = _marker_on_container(part)
+        if found is not None:
+            return found
+    return None
 
 
 def _defining_namespace(owner: type, func: Callable[..., Any]) -> dict[str, Any] | None:
@@ -501,12 +566,19 @@ def _near_choice(value: object, choices: tuple[Any, ...]) -> str:
     return f" Did you mean {near[0]!r}?" if len(near) == 1 else ""
 
 
-def check_value(command_name: str, parameter: str, value: object, spec: ValueSpec) -> Any:  # noqa: ANN401
+def check_value(  # noqa: PLR0911  # one return per kind of value
+    command_name: str,
+    parameter: str,
+    value: object,
+    spec: ValueSpec,
+) -> Any:  # noqa: ANN401  # the checked value, of whatever type it came as
     """Check and convert one argument against its annotation; raise ValueError if it does not fit."""
     if value is None and spec.optional:
         return None
     if spec.items is not None:
         return _check_items(command_name, parameter, value, spec.items)
+    if spec.members is not None:
+        return _check_members(command_name, parameter, value, spec.members)
     if spec.choices is not None:
         choice = _check_choice(command_name, parameter, value, spec.choices)
         _check_range(command_name, parameter, choice, spec)
@@ -547,7 +619,11 @@ def _check_choice(command_name: str, parameter: str, value: object, choices: tup
 def _checks_something(spec: ValueSpec) -> bool:
     """Whether check_value would check or convert anything for this spec."""
     return (
-        spec.choices is not None or spec.type in (bool, int, float) or spec.range is not None or spec.items is not None
+        spec.choices is not None
+        or spec.type in (bool, int, float)
+        or spec.range is not None
+        or spec.items is not None
+        or spec.members is not None
     )
 
 
@@ -555,14 +631,15 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
     """Check every element of a list argument; a list or tuple comes back converted.
 
     A NumPy array is handed on as it is, so an element that would need converting (an array of texts for a number) is
-    refused rather than passed on unconverted; pysweepme does not import NumPy to build a converted one.
+    refused rather than passed on unconverted; pysweepme does not import NumPy to build a converted one. An array of
+    rows (Elements(tuple[...])) is checked row by row, any other array element by element.
     """
     if isinstance(value, (str, bytes)) or not (isinstance(value, (list, tuple)) or hasattr(value, "tolist")):
         raise _fail(command_name, parameter, value, "is not a list.")
     if not _checks_something(items):
         return value
     if not isinstance(value, (list, tuple)):
-        flat = value.ravel() if hasattr(value, "ravel") else value  # an array
+        flat = value if items.members is not None or not hasattr(value, "ravel") else value.ravel()  # an array
         for index, item in enumerate(flat.tolist()):
             if check_value(command_name, f"{parameter}[{index}]", item, items) != item:
                 raise _fail(
@@ -573,6 +650,24 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
                 )
         return value
     checked = [check_value(command_name, f"{parameter}[{index}]", item, items) for index, item in enumerate(value)]
+    return tuple(checked) if isinstance(value, tuple) else checked
+
+
+def _check_members(
+    command_name: str,
+    parameter: str,
+    value: object,
+    members: tuple[ValueSpec, ...],
+) -> Any:  # noqa: ANN401  # the checked value, of whatever type it came as
+    """Check a tuple of fixed length member by member; it comes back converted, as a list where it came as one."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise _fail(command_name, parameter, value, f"is not a tuple of {len(members)} values.")
+    if len(value) != len(members):
+        raise _fail(command_name, parameter, value, f"has {len(value)} values, not {len(members)}.")
+    checked = [
+        check_value(command_name, f"{parameter}[{index}]", item, member)
+        for index, (item, member) in enumerate(zip(value, members, strict=True))
+    ]
     return tuple(checked) if isinstance(value, tuple) else checked
 
 
@@ -935,6 +1030,29 @@ def check_selector_defaults(cls: type) -> None:
                 raise TypeError(msg)
 
 
+def check_value_markers(cls: type) -> None:
+    """Refuse a Unit, Label or Range written on a list, tuple, Sequence or array in a command the driver class defines.
+
+    On a container it leaves open whether it means the whole value or each element, and a list of pairs could not say
+    it at all. The single value carries it: `list[Volts]`, `list[tuple[Hertz, Volts]]`, and an array, which has no
+    element type, `Annotated[np.ndarray, Elements(Hertz)]`. Called by EmptyDevice.__init_subclass__.
+    """
+    for name, member in vars(cls).items():
+        if command_info(member) is None:
+            continue
+        for parameter, hint in _hints(inspect.unwrap(member), dict(vars(cls))).items():
+            marker = _marker_on_container(hint)
+            if marker is None:
+                continue
+            what = "its return value" if parameter == "return" else parameter
+            msg = (
+                f"@command {name}: {what} has {marker} on a list, tuple or array - a unit, label or range belongs to "
+                f"a single value: write it on the element type (list[Volts], list[tuple[Hertz, Volts]]), and for an "
+                f"array use Annotated[np.ndarray, Elements(Hertz)]."
+            )
+            raise TypeError(msg)
+
+
 # --- selections kept by the instrument ----------------------------------------------------------------------------
 
 STATEFUL_ATTRIBUTE = "_stateful_selectors"
@@ -1278,17 +1396,23 @@ def _quantity_of_name(name: str) -> str:
 
 
 def _return_values(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  # any annotation object
-    """The value specs of what a command answers; () for -> None, None where it is not annotated."""
+    """The value specs of what a command answers, one per quantity; () for -> None, None where it is not annotated.
+
+    A tuple of fixed length answers one quantity per member (`tuple[Volts, Amperes]`), a series of such tuples one
+    series per member (`list[tuple[Hertz, Volts]]`, an array with `Elements(tuple[Hertz, Volts])`): each in the unit
+    and with the label of its member.
+    """
     if hint is None or hint is type(None):
         return ()
-    spec_hint = hint
-    if get_origin(spec_hint) is Annotated:
-        spec_hint = get_args(spec_hint)[0]
-    if get_origin(spec_hint) is tuple:
-        members = get_args(spec_hint)
-        if members and members[-1] is not Ellipsis:
-            return tuple(value_spec(m) for m in members)
-    return (value_spec(hint),)
+    spec = value_spec(hint)
+    if spec.members is not None:
+        return spec.members
+    rows = spec.items.members if spec.items is not None else None
+    if rows is not None:
+        return tuple(
+            replace(spec, items=member, unit=member.unit, label=member.label, range=member.range) for member in rows
+        )
+    return (spec,)
 
 
 def _guess_returns(name: str, count: int) -> tuple[str, ...]:
