@@ -151,7 +151,8 @@ class Selector:
 
     `Selector(stateful=True)` marks a selector the instrument keeps as a selection (`INST:OUT2`, then `VOLT 5`). The
     driver selects it in `apply_selectors`, and @command calls that only when the selection changes; the selection is
-    remembered on the Port, so every driver instance on it knows it.
+    remembered per selection scope (the Port, or the driver's `selection_scope()`), so every driver instance on that
+    connection knows it.
 
     `Selector(overlaps={"TRACK25V": ("+25V", "-25V")})` names values that reach the same hardware as other values
     (tracking drives both 25 V outputs; on a LabJack T4, AIN4 is FIO4). The relation is symmetric and not transitive:
