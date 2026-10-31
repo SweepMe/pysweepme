@@ -7,6 +7,7 @@ import importlib.util
 import inspect
 import sys
 import textwrap
+import typing
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import pytest
@@ -722,7 +723,6 @@ def test_the_receiver_passed_by_keyword_resolves_class_local_aliases() -> None:
 
 def test_list_elements_are_checked() -> None:
     """Each element of a list, a variadic tuple or a Sequence is checked and converted; text is no list."""
-    np = pytest.importorskip("numpy")
 
     class Pins(EmptyDevice):
         @command
@@ -746,6 +746,7 @@ def test_list_elements_are_checked() -> None:
     assert device.levels == (1.5, 2.0)
     with pytest.raises(ValueError, match=r"levels\[1\] 6\.0 is outside 0\.0 \.\.\. 5\.0"):
         device.set_levels((1.0, 6.0))
+    np = pytest.importorskip("numpy")
     array = np.array([1.0, 2.0])
     device.set_levels(array)
     assert device.levels is array  # checked, handed on as it is
@@ -758,7 +759,6 @@ Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
 
 def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
     """A unit, label or range on a list, tuple or array would leave open whether it means the whole or each element."""
-    np = pytest.importorskip("numpy")
     with pytest.raises(TypeError, match=r"set_levels: levels has Unit\(symbol='V'\) on a list, tuple or array"):
 
         class OnList(EmptyDevice):
@@ -774,6 +774,21 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
                 """Read the size."""
                 return (1.0, 2.0, 3.0)
 
+    with pytest.raises(TypeError, match=r"set_levels: levels has Label\(text='Levels'\) on a list"):
+
+        class OnOptionalList(EmptyDevice):
+            @command
+            def set_levels(self, levels: Annotated[list[float] | None, Label("Levels")] = None) -> None:
+                """Set the levels, or none."""
+
+    class Undeclared(EmptyDevice):
+        def get_levels(self) -> Annotated[list[float], Unit("V")]:
+            """A driver without @command is not checked."""
+            return [1.0]
+
+    assert Undeclared().get_levels() == [1.0]
+
+    np = pytest.importorskip("numpy")
     with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
 
         class OnArray(EmptyDevice):
@@ -784,55 +799,88 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
                 """Read the frequencies."""
                 return np.zeros(2)
 
-    class Undeclared(EmptyDevice):
-        def get_levels(self) -> Annotated[list[float], Unit("V")]:
-            """A driver without @command is not checked."""
-            return [1.0]
 
-    assert Undeclared().get_levels() == [1.0]
+def test_elements_are_refused_on_anything_but_an_array() -> None:
+    """Elements would replace the check of a single value or a list's own element type, so only an array takes it."""
+    with pytest.raises(TypeError, match=r"set_level: level has Elements\(hint=<class 'int'>\) on something that is"):
+
+        class OnFloat(EmptyDevice):
+            @command
+            def set_level(self, level: Annotated[float, Elements(int)]) -> None:
+                """Set the level."""
+
+    with pytest.raises(TypeError, match="get_levels: its return value has Elements"):
+
+        class OnList(EmptyDevice):
+            @command(returns=("level",))
+            def get_levels(self) -> Annotated[list[float], Elements(int)]:
+                """Read the levels."""
+                return [1.0]
+
+
+def test_elements_describe_an_optional_array() -> None:
+    """An array that may be None has its elements checked and its unit taken from them, as one that may not."""
+    np = pytest.importorskip("numpy")
+
+    class Sweep(EmptyDevice):
+        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
+
+        @command
+        def set_levels(self, levels: Levels = None) -> None:
+            """Set the levels, or none."""
+            self.levels = levels
+
+    device = Sweep()
+    device.set_levels(None)
+    device.set_levels(np.array([1.0, 2.0]))
+    with pytest.raises(ValueError, match=r"levels\[1\] 9\.0 is outside"):
+        device.set_levels(np.array([1.0, 9.0]))
+    spec = commands.value_spec(Sweep.Levels)
+    assert (spec.optional, spec.unit) == (True, "V")
 
 
 def test_a_series_carries_the_unit_of_its_elements() -> None:
     """list[Volts] and an array with Elements(Hertz) are series in V and Hz; a list of pairs answers one series each."""
-    np = pytest.importorskip("numpy")
 
-    class Spectrum(EmptyDevice):
-        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
-        Powers = Annotated[np.ndarray, Elements(RfPower)]
-
+    class Trace(EmptyDevice):
         @command(returns=("voltage",))
         def get_trace(self) -> list[Volts]:
             """Read a trace."""
             return [1.0, 2.0]
-
-        @command(returns=("frequency", "power"))
-        def get_spectrum(self) -> tuple[Frequencies, Powers]:
-            """Read a spectrum as two arrays."""
-            return np.zeros(2), np.zeros(2)
 
         @command(returns=("frequency", "voltage"))
         def get_pairs(self) -> list[tuple[Hertz, Volts]]:
             """Read frequency-voltage pairs."""
             return [(1.0, 0.5)]
 
-    specs = {spec.name: spec for spec in describe_commands(Spectrum())}
+    specs = {spec.name: spec for spec in describe_commands(Trace())}
     trace = specs["get_trace"].return_values
     assert [(v.unit, v.items.unit if v.items else None) for v in trace] == [("V", "V")]
-    spectrum = specs["get_spectrum"]
-    assert [v.unit for v in spectrum.return_values] == ["Hz", "dBm"]
-    assert spectrum.labels == {"frequency": "Frequency", "power": "RF power"}
     pairs = specs["get_pairs"]
     assert [(v.unit, v.items.unit if v.items else None) for v in pairs.return_values] == [("Hz", "Hz"), ("V", "V")]
     assert pairs.labels == {"frequency": "Frequency", "voltage": "Voltage"}
 
+    np = pytest.importorskip("numpy")
+
+    class Spectrum(EmptyDevice):
+        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
+        Powers = Annotated[np.ndarray, Elements(RfPower)]
+
+        @command(returns=("frequency", "power"))
+        def get_spectrum(self) -> tuple[Frequencies, Powers]:
+            """Read a spectrum as two arrays."""
+            return np.zeros(2), np.zeros(2)
+
+    spectrum = {spec.name: spec for spec in describe_commands(Spectrum())}["get_spectrum"]
+    assert [v.unit for v in spectrum.return_values] == ["Hz", "dBm"]
+    assert spectrum.labels == {"frequency": "Frequency", "power": "RF power"}
+
 
 def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
     """Each member of tuple[A, B] is checked against its own annotation, also inside a list and an array of rows."""
-    np = pytest.importorskip("numpy")
 
     class Points(EmptyDevice):
         Point = tuple[Hertz, Annotated[Volts, Range(0.0, 5.0)]]
-        Rows = Annotated[np.ndarray, Elements(Point)]
 
         @command
         def set_point(self, point: Point) -> None:
@@ -843,11 +891,6 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
         def set_points(self, points: list[Point]) -> None:
             """Set a list of points."""
             self.points = points
-
-        @command
-        def set_rows(self, rows: Rows) -> None:
-            """Set an array of rows."""
-            self.rows = rows
 
     device = Points()
     device.set_point(("1e3", 2))  # type: ignore[arg-type]
@@ -860,11 +903,34 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
     assert device.points == [[10.0, 1.5], (20.0, 2.0)]
     with pytest.raises(ValueError, match=r"points\[1\]\[1\] 7\.0 is outside"):
         device.set_points([(1.0, 1.0), (2.0, 7.0)])
+
+    np = pytest.importorskip("numpy")
+
+    class Table(EmptyDevice):
+        Rows = Annotated[np.ndarray, Elements(Points.Point)]
+
+        @command
+        def set_rows(self, rows: Rows) -> None:
+            """Set an array of rows."""
+            self.rows = rows
+
+    table = Table()
     rows = np.array([[1.0, 1.0], [2.0, 3.0]])
-    device.set_rows(rows)
-    assert device.rows is rows
+    table.set_rows(rows)
+    assert table.rows is rows
     with pytest.raises(ValueError, match=r"rows\[1\]\[1\] 8\.0 is outside"):
-        device.set_rows(np.array([[1.0, 1.0], [2.0, 8.0]]))
+        table.set_rows(np.array([[1.0, 1.0], [2.0, 8.0]]))
+
+
+def test_an_empty_tuple_has_no_members_and_a_bare_tuple_says_nothing() -> None:
+    """tuple[()] takes only an empty tuple and answers nothing; a bare typing.Tuple leaves its members unchecked."""
+    empty = commands.value_spec(tuple[()])
+    assert empty.members == ()
+    assert commands.check_value("set_nothing", "empty", (), empty) == ()
+    with pytest.raises(ValueError, match="has 1 values, not 0"):
+        commands.check_value("set_nothing", "empty", (1,), empty)
+    assert commands._return_values(tuple[()]) == ()  # the answers of a command
+    assert commands.value_spec(typing.Tuple).members is None  # noqa: UP006  # the bare alias on purpose
 
 
 def test_command_refuses_what_cannot_be_called_by_name() -> None:
@@ -1426,6 +1492,7 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
         "check_command_overrides",
         "check_selector_defaults",
         "check_selector_overlaps",
+        "check_value_markers",
         "complete_warning_sections",
         "prepare_stateful_selectors",
     ):

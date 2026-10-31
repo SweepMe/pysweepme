@@ -356,7 +356,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         members = [m for m in get_args(hint) if m is not type(None)]
         optional = len(members) < len(get_args(hint))
         if len(members) == 1:
-            inner = value_spec(members[0])
+            # Elements of an optional array describe the array, as they do without None.
+            inner = value_spec(members[0] if elements is None else Annotated[members[0], Elements(elements)])
             return ValueSpec(
                 type=inner.type,
                 optional=optional,
@@ -408,33 +409,51 @@ def _member_specs(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  #
     if get_origin(hint) is not tuple:
         return None
     members = get_args(hint)
-    if not members or members[-1] is Ellipsis:
+    # A bare typing.Tuple has no __args__ and says nothing of its members; tuple[()] has none.
+    if members[-1:] == (Ellipsis,) or (not members and getattr(hint, "__args__", None) != ()):
         return None
     return tuple(value_spec(member) for member in members)
 
 
+def _is_array(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
+    """Whether an annotation is a NumPy array, recognized without importing NumPy."""
+    return getattr(get_origin(hint) or hint, "__name__", "") == "ndarray"
+
+
 def _is_container(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
     """Whether an annotation is a list, tuple, Sequence or array: something that holds values rather than is one."""
-    origin = get_origin(hint) or hint
-    if origin in SEQUENCE_ORIGINS:
-        return True
-    return getattr(origin, "__name__", "") == "ndarray"  # numpy's, without importing NumPy
+    return (get_origin(hint) or hint) in SEQUENCE_ORIGINS or _is_array(hint)
 
 
-def _marker_on_container(hint: Any) -> str | None:  # noqa: ANN401  # any annotation object
-    """The first Unit, Label or Range written on a container anywhere in an annotation, as text; None if none is."""
+def _misplaced_marker(hint: Any) -> str | None:  # noqa: ANN401  # any annotation object
+    """What is wrong with the first misplaced marker anywhere in an annotation, as text; None if none is.
+
+    A Unit, Label or Range is misplaced on a container, Elements on anything but an array; an optional value counts as
+    the value it holds (`list[float] | None` is a list).
+    """
     if get_origin(hint) is Annotated:
         base, *metadata = get_args(hint)
+        values = [member for member in get_args(base) if member is not type(None)] if _is_union(base) else [base]
         markers = [item for item in metadata if isinstance(item, (Unit, Label, Range))]
-        if markers and _is_container(base):
-            return repr(markers[0])
-        inner = [base] + [item.hint for item in metadata if isinstance(item, Elements)]
+        if markers and any(_is_container(value) for value in values):
+            return (
+                f"{markers[0]!r} on a list, tuple or array - a unit, label or range belongs to a single value: write "
+                f"it on the element type (list[Volts], list[tuple[Hertz, Volts]]), and for an array use "
+                f"Annotated[np.ndarray, Elements(Hertz)]."
+            )
+        elements = [item for item in metadata if isinstance(item, Elements)]
+        if elements and not all(_is_array(value) for value in values):
+            return (
+                f"{elements[0]!r} on something that is no array - Elements describes the elements of an array, which "
+                f"has no element type; a list or tuple names its own (list[Hertz])."
+            )
+        inner = [base] + [item.hint for item in elements]
     elif get_origin(hint) is Literal:
         return None
     else:
         inner = list(get_args(hint))
     for part in inner:
-        found = _marker_on_container(part)
+        found = _misplaced_marker(part)
         if found is not None:
             return found
     return None
@@ -1031,25 +1050,22 @@ def check_selector_defaults(cls: type) -> None:
 
 
 def check_value_markers(cls: type) -> None:
-    """Refuse a Unit, Label or Range written on a list, tuple, Sequence or array in a command the driver class defines.
+    """Refuse a Unit, Label or Range on a list, tuple, Sequence or array, and Elements on anything but an array.
 
-    On a container it leaves open whether it means the whole value or each element, and a list of pairs could not say
-    it at all. The single value carries it: `list[Volts]`, `list[tuple[Hertz, Volts]]`, and an array, which has no
-    element type, `Annotated[np.ndarray, Elements(Hertz)]`. Called by EmptyDevice.__init_subclass__.
+    On a container a unit leaves open whether it means the whole value or each element, and a list of pairs could not
+    say it at all. The single value carries it: `list[Volts]`, `list[tuple[Hertz, Volts]]`, and an array, which has no
+    element type, `Annotated[np.ndarray, Elements(Hertz)]`. Elements on anything else would replace the check of the
+    value itself. Applies to the commands the driver class defines; called by EmptyDevice.__init_subclass__.
     """
     for name, member in vars(cls).items():
         if command_info(member) is None:
             continue
         for parameter, hint in _hints(inspect.unwrap(member), dict(vars(cls))).items():
-            marker = _marker_on_container(hint)
-            if marker is None:
+            problem = _misplaced_marker(hint)
+            if problem is None:
                 continue
             what = "its return value" if parameter == "return" else parameter
-            msg = (
-                f"@command {name}: {what} has {marker} on a list, tuple or array - a unit, label or range belongs to "
-                f"a single value: write it on the element type (list[Volts], list[tuple[Hertz, Volts]]), and for an "
-                f"array use Annotated[np.ndarray, Elements(Hertz)]."
-            )
+            msg = f"@command {name}: {what} has {problem}"
             raise TypeError(msg)
 
 
