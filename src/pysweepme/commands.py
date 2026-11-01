@@ -422,7 +422,10 @@ def _member_specs(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  #
 def _is_array(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
     """Whether an annotation is a NumPy array or a subclass of one, recognized without importing NumPy."""
     origin = get_origin(hint) or hint
-    return any(getattr(cls, "__name__", "") == "ndarray" for cls in getattr(origin, "__mro__", (origin,)))
+    classes = getattr(origin, "__mro__", (origin,))
+    return any(
+        getattr(cls, "__module__", "") == "numpy" and getattr(cls, "__name__", "") == "ndarray" for cls in classes
+    )
 
 
 def _is_container(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
@@ -680,9 +683,11 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
 
 
 def _unchanged(checked: object, item: object) -> bool:
-    """Whether checking left an array element as it was: equal, and a bool only where it was one (True == 1)."""
+    """Whether checking left an array element as it was: equal (NaN as NaN), a bool only where it was one."""
     if isinstance(checked, list) and isinstance(item, list):  # a row
         return len(checked) == len(item) and all(_unchanged(c, i) for c, i in zip(checked, item, strict=True))
+    if isinstance(checked, float) and isinstance(item, float) and math.isnan(checked) and math.isnan(item):
+        return True  # NaN equals nothing, not even itself
     return checked == item and isinstance(checked, bool) == isinstance(item, bool)
 
 

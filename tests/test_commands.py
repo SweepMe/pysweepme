@@ -839,6 +839,7 @@ def test_elements_fit_an_array_subclass() -> None:
     """A subclass of np.ndarray is an array too, so it takes Elements."""
     voltage_array = type("VoltageArray", (np.ndarray,), {})
     assert commands._is_array(np.ndarray)
+    assert not commands._is_array(type("ndarray", (), {}))  # only NumPy's
     assert commands._is_array(voltage_array)
     assert commands._misplaced_marker(Annotated[voltage_array, Elements(float)]) is None
     assert not commands._is_array(list[float])
@@ -1012,6 +1013,9 @@ def test_an_array_whose_elements_need_converting_is_refused() -> None:
     numbers_array = np.array([1, 2])
     device.set_levels(numbers_array)  # type: ignore[arg-type]
     assert device.levels is numbers_array  # type: ignore[comparison-overlap]
+    with_nan = np.array([1.0, np.nan])
+    device.set_levels(with_nan)  # type: ignore[arg-type]
+    assert device.levels is with_nan  # type: ignore[comparison-overlap]  # NaN is unchanged, as a scalar is
     with pytest.raises(ValueError, match=r"levels\[0\] '1\.5' would need converting"):
         device.set_levels(np.array(["1.5", "2.0"]))  # type: ignore[arg-type]
     device.set_levels(["1.5", "2.0"])  # type: ignore[list-item]
