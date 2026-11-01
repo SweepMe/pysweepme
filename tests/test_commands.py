@@ -8,9 +8,10 @@ import inspect
 import sys
 import textwrap
 import typing
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from pysweepme import commands
@@ -788,7 +789,7 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
     with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
 
         class OnArray(EmptyDevice):
-            Frequencies = Annotated[np.ndarray, Range(0, None)]
+            Frequencies = Annotated[npt.NDArray[Any], Range(0, None)]
 
             @command(returns=("frequency",))
             def get_frequencies(self) -> Frequencies:
@@ -818,7 +819,7 @@ def test_elements_describe_an_optional_array() -> None:
     """An array that may be None has its elements checked and its unit taken from them, as one that may not."""
 
     class Sweep(EmptyDevice):
-        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
+        Levels = Annotated[npt.NDArray[Any] | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
 
         @command
         def set_levels(self, levels: Levels = None) -> None:
@@ -837,6 +838,7 @@ def test_elements_describe_an_optional_array() -> None:
 def test_elements_fit_an_array_subclass() -> None:
     """A subclass of np.ndarray is an array too, so it takes Elements."""
     voltage_array = type("VoltageArray", (np.ndarray,), {})
+    assert commands._is_array(np.ndarray)
     assert commands._is_array(voltage_array)
     assert commands._misplaced_marker(Annotated[voltage_array, Elements(float)]) is None
     assert not commands._is_array(list[float])
@@ -864,8 +866,8 @@ def test_a_series_carries_the_unit_of_its_elements() -> None:
     assert pairs.labels == {"frequency": "Frequency", "voltage": "Voltage"}
 
     class Spectrum(EmptyDevice):
-        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
-        Powers = Annotated[np.ndarray, Elements(RfPower)]
+        Frequencies = Annotated[npt.NDArray[Any], Elements(Hertz)]
+        Powers = Annotated[npt.NDArray[Any], Elements(RfPower)]
 
         @command(returns=("frequency", "power"))
         def get_spectrum(self) -> tuple[Frequencies, Powers]:
@@ -906,7 +908,7 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
         device.set_points([(1.0, 1.0), (2.0, 7.0)])
 
     class Table(EmptyDevice):
-        Rows = Annotated[np.ndarray, Elements(Points.Point)]
+        Rows = Annotated[npt.NDArray[Any], Elements(Points.Point)]
 
         @command
         def set_rows(self, rows: Rows) -> None:
