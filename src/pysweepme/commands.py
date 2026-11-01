@@ -37,6 +37,10 @@ written on the value with standard Python annotations, and everything of it is i
 A unit, label or range belongs to a single value, never to a list, tuple or array: a sequence says it with its element
 type (`list[Volts]`, `list[tuple[Hertz, Volts]]`), and an array, which has none, with `Elements(Hertz)`.
 
+Aliases are defined above the driver class, at module level or in the class body before the commands that use them.
+The annotations are checked when the class is created, and an alias defined below the class does not exist yet then:
+a marker in the wrong place (a Unit on a list) would go unnoticed.
+
 `@command` marks the method as a command and checks its arguments on every call against these annotations.
 `describe_commands` reads the commands of a driver instance for SweepMe!, Instrument Control and scripts alike.
 """
