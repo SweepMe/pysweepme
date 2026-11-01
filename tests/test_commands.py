@@ -10,6 +10,7 @@ import textwrap
 import typing
 from typing import TYPE_CHECKING, Annotated, Literal
 
+import numpy as np
 import pytest
 
 from pysweepme import commands
@@ -261,12 +262,10 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
         from pysweepme.commands import command
         from pysweepme.EmptyDeviceClass import EmptyDevice
 
-
         class Device(EmptyDevice):
             @command(returns=("reading",))
             def get_reading(self) -> Reading:
                 return 1.0
-
 
         Reading = float
         """,
@@ -411,7 +410,6 @@ def test_driver_module_with_future_annotations(tmp_path: Path) -> None:
 
         Volts = Annotated[float, Unit("V")]
         Mode = Literal["AUTO", "HIGH", "LOW"]
-
 
         class Device(EmptyDevice):
             """A driver written as a separate module."""
@@ -746,12 +744,11 @@ def test_list_elements_are_checked() -> None:
     assert device.levels == (1.5, 2.0)
     with pytest.raises(ValueError, match=r"levels\[1\] 6\.0 is outside 0\.0 \.\.\. 5\.0"):
         device.set_levels((1.0, 6.0))
-    np = pytest.importorskip("numpy")
     array = np.array([1.0, 2.0])
-    device.set_levels(array)
-    assert device.levels is array  # checked, handed on as it is
+    device.set_levels(array)  # type: ignore[arg-type]
+    assert device.levels is array  # type: ignore[comparison-overlap]  # checked, handed on as it is
     with pytest.raises(ValueError, match="is outside"):
-        device.set_levels(np.array([[1.0, 9.0]]))
+        device.set_levels(np.array([[1.0, 9.0]]))  # type: ignore[arg-type]
 
 
 Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
@@ -788,11 +785,10 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
 
     assert Undeclared().get_levels() == [1.0]
 
-    np = pytest.importorskip("numpy")
     with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
 
         class OnArray(EmptyDevice):
-            Frequencies = Annotated[np.ndarray, Range(0, None)]  # type: ignore[name-defined]
+            Frequencies = Annotated[np.ndarray, Range(0, None)]
 
             @command(returns=("frequency",))
             def get_frequencies(self) -> Frequencies:
@@ -820,10 +816,9 @@ def test_elements_are_refused_on_anything_but_an_array() -> None:
 
 def test_elements_describe_an_optional_array() -> None:
     """An array that may be None has its elements checked and its unit taken from them, as one that may not."""
-    np = pytest.importorskip("numpy")
 
     class Sweep(EmptyDevice):
-        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]  # type: ignore[name-defined]
+        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
 
         @command
         def set_levels(self, levels: Levels = None) -> None:
@@ -841,7 +836,6 @@ def test_elements_describe_an_optional_array() -> None:
 
 def test_elements_fit_an_array_subclass() -> None:
     """A subclass of np.ndarray is an array too, so it takes Elements."""
-    np = pytest.importorskip("numpy")
     voltage_array = type("VoltageArray", (np.ndarray,), {})
     assert commands._is_array(voltage_array)
     assert commands._misplaced_marker(Annotated[voltage_array, Elements(float)]) is None
@@ -869,11 +863,9 @@ def test_a_series_carries_the_unit_of_its_elements() -> None:
     assert [(v.unit, v.items.unit if v.items else None) for v in pairs.return_values] == [("Hz", "Hz"), ("V", "V")]
     assert pairs.labels == {"frequency": "Frequency", "voltage": "Voltage"}
 
-    np = pytest.importorskip("numpy")
-
     class Spectrum(EmptyDevice):
-        Frequencies = Annotated[np.ndarray, Elements(Hertz)]  # type: ignore[name-defined]
-        Powers = Annotated[np.ndarray, Elements(RfPower)]  # type: ignore[name-defined]
+        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
+        Powers = Annotated[np.ndarray, Elements(RfPower)]
 
         @command(returns=("frequency", "power"))
         def get_spectrum(self) -> tuple[Frequencies, Powers]:
@@ -913,10 +905,8 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
     with pytest.raises(ValueError, match=r"points\[1\]\[1\] 7\.0 is outside"):
         device.set_points([(1.0, 1.0), (2.0, 7.0)])
 
-    np = pytest.importorskip("numpy")
-
     class Table(EmptyDevice):
-        Rows = Annotated[np.ndarray, Elements(Points.Point)]  # type: ignore[name-defined]
+        Rows = Annotated[np.ndarray, Elements(Points.Point)]
 
         @command
         def set_rows(self, rows: Rows) -> None:
@@ -1009,7 +999,6 @@ def test_a_numeric_choice_keeps_its_range() -> None:
 
 def test_an_array_whose_elements_need_converting_is_refused() -> None:
     """An array is handed on as it is, so an array of texts for numbers is refused instead of passed on unconverted."""
-    np = pytest.importorskip("numpy")
 
     class Levels(EmptyDevice):
         @command
@@ -1019,10 +1008,10 @@ def test_an_array_whose_elements_need_converting_is_refused() -> None:
 
     device = Levels()
     numbers_array = np.array([1, 2])
-    device.set_levels(numbers_array)
-    assert device.levels is numbers_array
+    device.set_levels(numbers_array)  # type: ignore[arg-type]
+    assert device.levels is numbers_array  # type: ignore[comparison-overlap]
     with pytest.raises(ValueError, match=r"levels\[0\] '1\.5' would need converting"):
-        device.set_levels(np.array(["1.5", "2.0"]))
+        device.set_levels(np.array(["1.5", "2.0"]))  # type: ignore[arg-type]
     device.set_levels(["1.5", "2.0"])  # type: ignore[list-item]
     assert device.levels == [1.5, 2.0]
 
@@ -1034,10 +1023,10 @@ def test_an_array_whose_elements_need_converting_is_refused() -> None:
 
     mask = Mask()
     flags = np.array([True, False])
-    mask.set_mask(flags)
-    assert mask.mask is flags
+    mask.set_mask(flags)  # type: ignore[arg-type]
+    assert mask.mask is flags  # type: ignore[comparison-overlap]
     with pytest.raises(ValueError, match=r"mask\[0\] 1 would need converting"):  # True == 1, but no bool
-        mask.set_mask(np.array([1, 0]))
+        mask.set_mask(np.array([1, 0]))  # type: ignore[arg-type]
 
 
 def test_a_positional_only_parameter_is_refused() -> None:
