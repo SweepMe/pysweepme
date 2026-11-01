@@ -416,8 +416,9 @@ def _member_specs(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  #
 
 
 def _is_array(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
-    """Whether an annotation is a NumPy array, recognized without importing NumPy."""
-    return getattr(get_origin(hint) or hint, "__name__", "") == "ndarray"
+    """Whether an annotation is a NumPy array or a subclass of one, recognized without importing NumPy."""
+    origin = get_origin(hint) or hint
+    return any(getattr(cls, "__name__", "") == "ndarray" for cls in getattr(origin, "__mro__", (origin,)))
 
 
 def _is_container(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
@@ -658,9 +659,11 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
     if not _checks_something(items):
         return value
     if not isinstance(value, (list, tuple)):
+        if items.members is not None and getattr(value, "ndim", 1) == 0:
+            raise _fail(command_name, parameter, value, "is no array of rows.")
         flat = value if items.members is not None or not hasattr(value, "ravel") else value.ravel()  # an array
         for index, item in enumerate(flat.tolist()):
-            if check_value(command_name, f"{parameter}[{index}]", item, items) != item:
+            if not _unchanged(check_value(command_name, f"{parameter}[{index}]", item, items), item):
                 raise _fail(
                     command_name,
                     f"{parameter}[{index}]",
@@ -670,6 +673,13 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
         return value
     checked = [check_value(command_name, f"{parameter}[{index}]", item, items) for index, item in enumerate(value)]
     return tuple(checked) if isinstance(value, tuple) else checked
+
+
+def _unchanged(checked: object, item: object) -> bool:
+    """Whether checking left an array element as it was: equal, and a bool only where it was one (True == 1)."""
+    if isinstance(checked, list) and isinstance(item, list):  # a row
+        return len(checked) == len(item) and all(_unchanged(c, i) for c, i in zip(checked, item, strict=True))
+    return checked == item and isinstance(checked, bool) == isinstance(item, bool)
 
 
 def _check_members(

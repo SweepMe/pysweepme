@@ -839,6 +839,15 @@ def test_elements_describe_an_optional_array() -> None:
     assert (spec.optional, spec.unit) == (True, "V")
 
 
+def test_elements_fit_an_array_subclass() -> None:
+    """A subclass of np.ndarray is an array too, so it takes Elements."""
+    np = pytest.importorskip("numpy")
+    voltage_array = type("VoltageArray", (np.ndarray,), {})
+    assert commands._is_array(voltage_array)
+    assert commands._misplaced_marker(Annotated[voltage_array, Elements(float)]) is None
+    assert not commands._is_array(list[float])
+
+
 def test_a_series_carries_the_unit_of_its_elements() -> None:
     """list[Volts] and an array with Elements(Hertz) are series in V and Hz; a list of pairs answers one series each."""
 
@@ -920,6 +929,8 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
     assert table.rows is rows
     with pytest.raises(ValueError, match=r"rows\[1\]\[1\] 8\.0 is outside"):
         table.set_rows(np.array([[1.0, 1.0], [2.0, 8.0]]))
+    with pytest.raises(ValueError, match="is no array of rows"):
+        table.set_rows(np.array(5.0))
 
 
 def test_an_empty_tuple_has_no_members_and_a_bare_tuple_says_nothing() -> None:
@@ -1014,6 +1025,19 @@ def test_an_array_whose_elements_need_converting_is_refused() -> None:
         device.set_levels(np.array(["1.5", "2.0"]))
     device.set_levels(["1.5", "2.0"])  # type: ignore[list-item]
     assert device.levels == [1.5, 2.0]
+
+    class Mask(EmptyDevice):
+        @command
+        def set_mask(self, mask: list[bool]) -> None:
+            """Set the mask."""
+            self.mask = mask
+
+    mask = Mask()
+    flags = np.array([True, False])
+    mask.set_mask(flags)
+    assert mask.mask is flags
+    with pytest.raises(ValueError, match=r"mask\[0\] 1 would need converting"):  # True == 1, but no bool
+        mask.set_mask(np.array([1, 0]))
 
 
 def test_a_positional_only_parameter_is_refused() -> None:
