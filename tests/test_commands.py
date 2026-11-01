@@ -792,7 +792,7 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
     with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
 
         class OnArray(EmptyDevice):
-            Frequencies = Annotated[np.ndarray, Range(0, None)]
+            Frequencies = Annotated[np.ndarray, Range(0, None)]  # type: ignore[name-defined]
 
             @command(returns=("frequency",))
             def get_frequencies(self) -> Frequencies:
@@ -823,7 +823,7 @@ def test_elements_describe_an_optional_array() -> None:
     np = pytest.importorskip("numpy")
 
     class Sweep(EmptyDevice):
-        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
+        Levels = Annotated[np.ndarray | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]  # type: ignore[name-defined]
 
         @command
         def set_levels(self, levels: Levels = None) -> None:
@@ -863,8 +863,8 @@ def test_a_series_carries_the_unit_of_its_elements() -> None:
     np = pytest.importorskip("numpy")
 
     class Spectrum(EmptyDevice):
-        Frequencies = Annotated[np.ndarray, Elements(Hertz)]
-        Powers = Annotated[np.ndarray, Elements(RfPower)]
+        Frequencies = Annotated[np.ndarray, Elements(Hertz)]  # type: ignore[name-defined]
+        Powers = Annotated[np.ndarray, Elements(RfPower)]  # type: ignore[name-defined]
 
         @command(returns=("frequency", "power"))
         def get_spectrum(self) -> tuple[Frequencies, Powers]:
@@ -907,7 +907,7 @@ def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
     np = pytest.importorskip("numpy")
 
     class Table(EmptyDevice):
-        Rows = Annotated[np.ndarray, Elements(Points.Point)]
+        Rows = Annotated[np.ndarray, Elements(Points.Point)]  # type: ignore[name-defined]
 
         @command
         def set_rows(self, rows: Rows) -> None:
