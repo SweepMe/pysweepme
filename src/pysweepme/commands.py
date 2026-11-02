@@ -640,7 +640,19 @@ def _check_range(command_name: str, parameter: str, value: object, spec: ValueSp
         return
     if not spec.range.contains(float(value)):
         unit = f" {spec.unit}" if spec.unit else ""
-        raise _fail(command_name, parameter, value, f"is outside {spec.range}{unit}.")
+        raise _fail(command_name, parameter, value, _out_of_range(float(value), spec.range, unit))
+
+
+def _out_of_range(value: float, value_range: Range, unit: str) -> str:
+    """What is wrong with a value outside a range: "is outside 1 ... 8 V.", or the one bound of an open range."""
+    minimum, maximum = value_range.minimum, value_range.maximum
+    if minimum is not None and maximum is not None:
+        return f"is outside {value_range}{unit}."
+    if math.isnan(value):
+        return "is NaN, which lies in no range."
+    if minimum is not None and value < minimum:
+        return f"is below the minimum {minimum}{unit}."
+    return f"is above the maximum {maximum}{unit}."
 
 
 def _check_choice(command_name: str, parameter: str, value: object, choices: tuple[Any, ...]) -> Any:  # noqa: ANN401

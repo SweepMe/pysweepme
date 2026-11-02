@@ -379,8 +379,29 @@ def test_numbers_are_converted_and_ranges_checked() -> None:
     assert device.calls[-1] == ("set_points", (1, 4))
     with pytest.raises(ValueError, match=r"is not a number \(int\)"):
         device.set_points(1, 2.5)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match=r"is outside 1 \.\.\."):
+    with pytest.raises(ValueError, match=r"set_points: points 0 is below the minimum 1\.$"):
         device.set_points(1, 0)
+
+
+def test_an_open_range_names_its_one_bound() -> None:
+    """A range open on one side names the bound that is missed, with the unit; NaN is in no range."""
+
+    class Open(EmptyDevice):
+        @command
+        def set_level(self, level: Annotated[Volts, Range(None, 100.0)]) -> None:
+            """Set the level."""
+
+        @command
+        def set_points(self, points: Annotated[int, Range(1, None)]) -> None:
+            """Set the number of points."""
+
+    device = Open()
+    with pytest.raises(ValueError, match=r"set_level: level 150\.0 is above the maximum 100\.0 V\.$"):
+        device.set_level(150)
+    with pytest.raises(ValueError, match=r"set_level: level nan is NaN, which lies in no range\.$"):
+        device.set_level(float("nan"))
+    with pytest.raises(ValueError, match=r"set_points: points -2 is below the minimum 1\.$"):
+        device.set_points(-2)
 
 
 def test_bool_and_optional_arguments() -> None:
