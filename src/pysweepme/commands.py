@@ -1109,6 +1109,34 @@ def check_value_markers(cls: type) -> None:
             raise TypeError(msg)
 
 
+def check_returns(cls: type) -> None:
+    """Refuse a reader whose returns names more or fewer values than its return annotation answers.
+
+    A tuple of fixed length answers one value per member (`tuple[Volts, Amperes]`), a series of such tuples one series
+    per member (`list[tuple[Hertz, Volts]]`, an array with `Elements(tuple[Hertz, Volts])`), anything else one value.
+    A return annotation that does not say how many values it holds (Any, object, an array without Elements) or that
+    cannot be resolved is not compared. Applies to the commands the driver class defines; called by
+    EmptyDevice.__init_subclass__, when the aliases resolve.
+    """
+    for name, member in vars(cls).items():
+        info = command_info(member)
+        if info is None or not info.returns:
+            continue
+        hint = _hints(inspect.unwrap(member), dict(vars(cls))).get("return")
+        if hint is None:
+            continue
+        spec = value_spec(hint)
+        if spec.type in (Any, object) or (_is_array(spec.type) and spec.items is None):
+            continue
+        values = _return_values(hint) or ()
+        if len(values) != len(info.returns):
+            msg = (
+                f"@command {name}: returns names {len(info.returns)} value(s) {info.returns}, but its return "
+                f"annotation answers {len(values)} - one name per member of a tuple, else one name."
+            )
+            raise TypeError(msg)
+
+
 # --- selections kept by the instrument ----------------------------------------------------------------------------
 
 STATEFUL_ATTRIBUTE = "_stateful_selectors"

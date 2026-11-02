@@ -57,6 +57,7 @@ class EmptyDevice:
         super().__init_subclass__(**kwargs)
         from .commands import (  # noqa: PLC0415  # commands imports this module
             check_command_overrides,
+            check_returns,
             check_selector_defaults,
             check_selector_overlaps,
             check_value_markers,
@@ -72,6 +73,7 @@ class EmptyDevice:
         check_selector_defaults(cls)
         check_selector_overlaps(cls)
         check_value_markers(cls)
+        check_returns(cls)
         complete_warning_sections(cls)
         prepare_stateful_selectors(cls)
 
