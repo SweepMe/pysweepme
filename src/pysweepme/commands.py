@@ -547,10 +547,18 @@ def _to_number(value: object, kind: type) -> float | int | None:
     return _to_int(value) if kind is int else _to_float(value)
 
 
+def _is_numpy_bool(value: object) -> bool:
+    """Whether a value is NumPy's bool scalar (np.bool, np.bool_ before NumPy 2), recognized without importing NumPy."""
+    cls = type(value)
+    return getattr(cls, "__module__", "") == "numpy" and getattr(cls, "__name__", "") in ("bool", "bool_")
+
+
 def _to_bool(value: object) -> bool | None:
-    """Convert a bool, 0/1 or its text to bool; None where it is not one."""
+    """Convert a bool, NumPy's bool, 0/1 or its text to bool; None where it is not one."""
     if isinstance(value, bool):
         return value
+    if _is_numpy_bool(value):
+        return bool(value)
     if isinstance(value, numbers.Integral) and int(value) in (0, 1):
         return bool(value)
     if isinstance(value, str):
