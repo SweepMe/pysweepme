@@ -828,6 +828,56 @@ def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
 
     assert Undeclared().get_levels() == [1.0]
 
+
+def test_returns_names_as_many_values_as_the_annotation_answers() -> None:
+    """One name per member of a tuple or of the rows of a series, else one name; checked when the class is created."""
+    with pytest.raises(TypeError, match=r"get_voltage: returns names 2 value\(s\) \('voltage', 'current'\), but its"):
+
+        class TwoForOne(EmptyDevice):
+            @command(returns=("voltage", "current"))
+            def get_voltage(self) -> Volts:
+                """Measure the voltage."""
+                return 1.0
+
+    with pytest.raises(TypeError, match="get_pair: returns names 1 value"):
+
+        class OneForTwo(EmptyDevice):
+            @command(returns=("voltage",))
+            def get_pair(self) -> tuple[Volts, Amperes]:
+                """Measure voltage and current."""
+                return (1.0, 0.001)
+
+    with pytest.raises(TypeError, match="get_response: returns names 3 value"):
+
+        class ThreeForPairs(EmptyDevice):
+            @command(returns=("frequency", "voltage", "phase"))
+            def get_response(self) -> list[tuple[float, Volts]]:
+                """Read the response."""
+                return []
+
+    class Fitting(EmptyDevice):
+        @command(returns=("voltage", "current"))
+        def get_pair(self) -> tuple[Volts, Amperes]:
+            """Measure voltage and current."""
+            return (1.0, 0.001)
+
+        @command(returns=("frequency", "voltage"))
+        def get_response(self) -> npt.NDArray[Any]:
+            """An array without Elements says nothing about its rows: not compared."""
+            return np.zeros((2, 2))
+
+        @command(returns=("trace",))
+        def get_trace(self) -> list[Volts]:
+            """A series is one value."""
+            return [1.0]
+
+        @command(returns=("frequency", "voltage"))
+        def get_settings(self) -> Any:  # noqa: ANN401  # says nothing about the answer
+            """An answer of any kind is not compared."""
+            return (1.0, 2.0)
+
+    assert Fitting().get_pair() == (1.0, 0.001)
+
     with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
 
         class OnArray(EmptyDevice):
