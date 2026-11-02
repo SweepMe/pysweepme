@@ -7,8 +7,11 @@ import importlib.util
 import inspect
 import sys
 import textwrap
-from typing import TYPE_CHECKING, Annotated, Literal
+import typing
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
+import numpy as np
+import numpy.typing as npt
 import pytest
 
 from pysweepme import commands
@@ -16,6 +19,7 @@ from pysweepme.commands import (
     COMMAND_ATTRIBUTE,
     CommandError,
     CommandInfo,
+    Elements,
     Label,
     Range,
     Selector,
@@ -57,7 +61,7 @@ class Declared(EmptyDevice):
         """Set the output voltage."""
         self.calls.append(("set_voltage", (channel, voltage)))
 
-    @command(hazards="FIMV with no load drives the output to compliance.")
+    @command(warnings="FIMV with no load drives the output to compliance.")
     def set_source_mode(self, channel: Channel, mode: SourceMode) -> None:
         """Set the source mode."""
         self.calls.append(("set_source_mode", (channel, mode)))
@@ -112,7 +116,7 @@ class Declared(EmptyDevice):
         """Sweep the voltage from start to stop."""
 
     @command(
-        hazards=(
+        warnings=(
             "Re-enumerates the USB device: the open port is lost.",
             "Resets every setting, also those the driver promised to keep.",
         ),
@@ -191,28 +195,28 @@ def test_command_refuses_wrong_arguments_of_its_own() -> None:
         command(returns="voltage")
     with pytest.raises(ValueError, match="reads must be one of"):
         command(reads="readback")
-    with pytest.raises(TypeError, match="hazards must be a text"):
-        command(hazards=("fine", 3))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="warnings must be a text"):
+        command(warnings=("fine", 3))  # type: ignore[arg-type]
 
 
-def test_hazards_are_metadata_and_shown_by_help() -> None:
-    """Hazards are stored as a tuple of texts and appended to the docstring as a Hazards section."""
+def test_warnings_are_metadata_and_shown_by_help() -> None:
+    """Warnings are stored as a tuple of texts and appended to the docstring as a Warnings section."""
     assert command_info(Declared.set_source_mode) == CommandInfo(
-        hazards=("FIMV with no load drives the output to compliance.",),
+        warnings=("FIMV with no load drives the output to compliance.",),
     )
     assert inspect.getdoc(Declared.reset) == (
-        "Reset the instrument.\n\nA longer explanation of the reset.\n\nHazards:\n"
+        "Reset the instrument.\n\nA longer explanation of the reset.\n\nWarnings:\n"
         "    Re-enumerates the USB device: the open port is lost.\n"
         "    Resets every setting, also those the driver promised to keep."
     )
     assert inspect.getdoc(Declared.set_voltage) == "Set the output voltage."
 
-    @command(hazards="  A text   wrapped\n   over lines.  ")
+    @command(warnings="  A text   wrapped\n   over lines.  ")
     def undocumented() -> None:
         pass
 
-    assert command_info(undocumented) == CommandInfo(hazards=("A text wrapped over lines.",))
-    assert undocumented.__doc__ == "Hazards:\n    A text wrapped over lines."
+    assert command_info(undocumented) == CommandInfo(warnings=("A text wrapped over lines.",))
+    assert undocumented.__doc__ == "Warnings:\n    A text wrapped over lines."
 
 
 def test_declared_command_must_state_what_it_is() -> None:
@@ -259,12 +263,10 @@ def test_forward_reference_does_not_break_loading(tmp_path: Path) -> None:
         from pysweepme.commands import command
         from pysweepme.EmptyDeviceClass import EmptyDevice
 
-
         class Device(EmptyDevice):
             @command(returns=("reading",))
             def get_reading(self) -> Reading:
                 return 1.0
-
 
         Reading = float
         """,
@@ -409,7 +411,6 @@ def test_driver_module_with_future_annotations(tmp_path: Path) -> None:
 
         Volts = Annotated[float, Unit("V")]
         Mode = Literal["AUTO", "HIGH", "LOW"]
-
 
         class Device(EmptyDevice):
             """A driver written as a separate module."""
@@ -600,25 +601,25 @@ def test_kind_run_for_an_action_with_parameters() -> None:
         command(kind="set")
 
 
-def test_description_and_hazards() -> None:
-    """The description is the first docstring line, the hazards come from @command."""
+def test_description_and_warnings() -> None:
+    """The description is the first docstring line, the warnings come from @command."""
     device = Declared()
     assert spec_of(device, "set_voltage").description == "Set the output voltage."
-    assert spec_of(device, "set_voltage").hazards == ()
-    assert spec_of(device, "set_source_mode").hazards == ("FIMV with no load drives the output to compliance.",)
+    assert spec_of(device, "set_voltage").warnings == ()
+    assert spec_of(device, "set_source_mode").warnings == ("FIMV with no load drives the output to compliance.",)
     assert spec_of(device, "reset").description == "Reset the instrument."
-    assert len(spec_of(device, "reset").hazards) == 2  # noqa: PLR2004  # the two hazards declared above
+    assert len(spec_of(device, "reset").warnings) == 2  # noqa: PLR2004  # the two warnings declared above
     assert description_of(lambda: None) == ""
 
 
 class Composed(EmptyDevice):
     """A driver whose composites call commands directly, through a helper and through each other."""
 
-    @command(hazards="HIGH drives the output to compliance.")
+    @command(warnings="HIGH drives the output to compliance.")
     def set_range(self, range_type: Literal["AUTO", "HIGH"]) -> None:
         """Set the range."""
 
-    @command(hazards=("Drops the USB connection.",))
+    @command(warnings=("Drops the USB connection.",))
     def reset(self) -> None:
         """Reset the instrument."""
 
@@ -636,7 +637,7 @@ class Composed(EmptyDevice):
         self._prepare()
         self.set_level(0.0)
 
-    @command(composite=True, hazards="Sends its own raw commands.")
+    @command(composite=True, warnings="Sends its own raw commands.")
     def ramp(self, level: float) -> None:
         """Start over, then go to the level."""
         self.start_over()
@@ -649,41 +650,41 @@ class Composed(EmptyDevice):
         getattr(self, "reset")()  # noqa: B009  # the case the code cannot show
 
 
-def test_a_composite_inherits_the_hazards_of_what_it_calls() -> None:
-    """A composite's calls are read from its code, helpers followed; their hazards are added with their origin."""
+def test_a_composite_inherits_the_warnings_of_what_it_calls() -> None:
+    """A composite's calls are read from its code, helpers followed; their warnings are added with their origin."""
     device = Composed()
     start_over = spec_of(device, "start_over")
     assert start_over.calls == ("reset", "set_range", "set_level")
-    assert start_over.hazards == (
+    assert start_over.warnings == (
         "reset: Drops the USB connection.",
         "set_range: HIGH drives the output to compliance.",
     )
     ramp = spec_of(device, "ramp")
     assert ramp.calls == ("start_over", "set_level")
-    assert ramp.hazards == (
+    assert ramp.warnings == (
         "Sends its own raw commands.",
         "reset: Drops the USB connection.",
         "set_range: HIGH drives the output to compliance.",
     )
     assert spec_of(device, "by_name").calls == ()
-    assert spec_of(device, "by_name").hazards == ()
+    assert spec_of(device, "by_name").warnings == ()
     assert spec_of(device, "set_range").calls == ()
-    assert spec_of(device, "set_range").hazards == ("HIGH drives the output to compliance.",)
+    assert spec_of(device, "set_range").warnings == ("HIGH drives the output to compliance.",)
 
 
-def test_inherited_hazards_reach_the_docstring() -> None:
-    """help() shows a composite's inherited hazards too, completed when the driver class is created."""
+def test_inherited_warnings_reach_the_docstring() -> None:
+    """help() shows a composite's inherited warnings too, completed when the driver class is created."""
     doc = inspect.getdoc(Composed.ramp) or ""
     assert doc.startswith("Start over, then go to the level.")
-    assert "Hazards:" in doc
+    assert "Warnings:" in doc
     assert "Sends its own raw commands." in doc
     assert "reset: Drops the USB connection." in doc
     assert "set_range: HIGH drives the output to compliance." in doc
-    assert "Hazards:" not in (inspect.getdoc(Composed.by_name) or "")
+    assert "Warnings:" not in (inspect.getdoc(Composed.by_name) or "")
 
 
 def test_a_composite_of_a_subclass_inherits_from_the_base() -> None:
-    """A composite calling commands its base class defines inherits their hazards as well."""
+    """A composite calling commands its base class defines inherits their warnings as well."""
 
     class Child(Composed):
         @command(composite=True)
@@ -691,7 +692,7 @@ def test_a_composite_of_a_subclass_inherits_from_the_base() -> None:
             """Reset and set the range."""
             self.reset()
 
-    assert spec_of(Child(), "restart").hazards == ("reset: Drops the USB connection.",)
+    assert spec_of(Child(), "restart").warnings == ("reset: Drops the USB connection.",)
     assert "reset: Drops the USB connection." in (inspect.getdoc(Child.restart) or "")
 
 
@@ -721,7 +722,6 @@ def test_the_receiver_passed_by_keyword_resolves_class_local_aliases() -> None:
 
 def test_list_elements_are_checked() -> None:
     """Each element of a list, a variadic tuple or a Sequence is checked and converted; text is no list."""
-    np = pytest.importorskip("numpy")
 
     class Pins(EmptyDevice):
         @command
@@ -746,10 +746,195 @@ def test_list_elements_are_checked() -> None:
     with pytest.raises(ValueError, match=r"levels\[1\] 6\.0 is outside 0\.0 \.\.\. 5\.0"):
         device.set_levels((1.0, 6.0))
     array = np.array([1.0, 2.0])
-    device.set_levels(array)
-    assert device.levels is array  # checked, handed on as it is
+    device.set_levels(array)  # type: ignore[arg-type]
+    assert device.levels is array  # type: ignore[comparison-overlap]  # checked, handed on as it is
     with pytest.raises(ValueError, match="is outside"):
-        device.set_levels(np.array([[1.0, 9.0]]))
+        device.set_levels(np.array([[1.0, 9.0]]))  # type: ignore[arg-type]
+
+
+Hertz = Annotated[float, Unit("Hz"), Label("Frequency")]
+
+
+def test_a_unit_on_a_container_is_refused_when_the_driver_is_loaded() -> None:
+    """A unit, label or range on a list, tuple or array would leave open whether it means the whole or each element."""
+    with pytest.raises(TypeError, match=r"set_levels: levels has Unit\(symbol='V'\) on a list, tuple or array"):
+
+        class OnList(EmptyDevice):
+            @command
+            def set_levels(self, levels: Annotated[list[float], Unit("V")]) -> None:
+                """Set the levels."""
+
+    with pytest.raises(TypeError, match="get_size: its return value has Unit"):
+
+        class OnTuple(EmptyDevice):
+            @command(returns=("size",))
+            def get_size(self) -> Annotated[tuple[float, float, float], Unit("m")]:
+                """Read the size."""
+                return (1.0, 2.0, 3.0)
+
+    with pytest.raises(TypeError, match=r"set_levels: levels has Label\(text='Levels'\) on a list"):
+
+        class OnOptionalList(EmptyDevice):
+            @command
+            def set_levels(self, levels: Annotated[list[float] | None, Label("Levels")] = None) -> None:
+                """Set the levels, or none."""
+
+    class Undeclared(EmptyDevice):
+        def get_levels(self) -> Annotated[list[float], Unit("V")]:
+            """A driver without @command is not checked."""
+            return [1.0]
+
+    assert Undeclared().get_levels() == [1.0]
+
+    with pytest.raises(TypeError, match=r"Elements\(Hertz\)"):
+
+        class OnArray(EmptyDevice):
+            Frequencies = Annotated[npt.NDArray[Any], Range(0, None)]
+
+            @command(returns=("frequency",))
+            def get_frequencies(self) -> Frequencies:
+                """Read the frequencies."""
+                return np.zeros(2)
+
+
+def test_elements_are_refused_on_anything_but_an_array() -> None:
+    """Elements would replace the check of a single value or a list's own element type, so only an array takes it."""
+    with pytest.raises(TypeError, match=r"set_level: level has Elements\(hint=<class 'int'>\) on something that is"):
+
+        class OnFloat(EmptyDevice):
+            @command
+            def set_level(self, level: Annotated[float, Elements(int)]) -> None:
+                """Set the level."""
+
+    with pytest.raises(TypeError, match="get_levels: its return value has Elements"):
+
+        class OnList(EmptyDevice):
+            @command(returns=("level",))
+            def get_levels(self) -> Annotated[list[float], Elements(int)]:
+                """Read the levels."""
+                return [1.0]
+
+
+def test_elements_describe_an_optional_array() -> None:
+    """An array that may be None has its elements checked and its unit taken from them, as one that may not."""
+
+    class Sweep(EmptyDevice):
+        Levels = Annotated[npt.NDArray[Any] | None, Elements(Annotated[Volts, Range(0.0, 5.0)])]
+
+        @command
+        def set_levels(self, levels: Levels = None) -> None:
+            """Set the levels, or none."""
+            self.levels = levels
+
+    device = Sweep()
+    device.set_levels(None)
+    device.set_levels(np.array([1.0, 2.0]))
+    with pytest.raises(ValueError, match=r"levels\[1\] 9\.0 is outside"):
+        device.set_levels(np.array([1.0, 9.0]))
+    spec = commands.value_spec(Sweep.Levels)
+    assert (spec.optional, spec.unit) == (True, "V")
+
+
+def test_elements_fit_an_array_subclass() -> None:
+    """A subclass of np.ndarray is an array too, so it takes Elements."""
+    voltage_array = type("VoltageArray", (np.ndarray,), {})
+    assert commands._is_array(np.ndarray)
+    assert not commands._is_array(type("ndarray", (), {}))  # only NumPy's
+    assert commands._is_array(voltage_array)
+    assert commands._misplaced_marker(Annotated[voltage_array, Elements(float)]) is None
+    assert not commands._is_array(list[float])
+
+
+def test_a_series_carries_the_unit_of_its_elements() -> None:
+    """list[Volts] and an array with Elements(Hertz) are series in V and Hz; a list of pairs answers one series each."""
+
+    class Trace(EmptyDevice):
+        @command(returns=("voltage",))
+        def get_trace(self) -> list[Volts]:
+            """Read a trace."""
+            return [1.0, 2.0]
+
+        @command(returns=("frequency", "voltage"))
+        def get_pairs(self) -> list[tuple[Hertz, Volts]]:
+            """Read frequency-voltage pairs."""
+            return [(1.0, 0.5)]
+
+    specs = {spec.name: spec for spec in describe_commands(Trace())}
+    trace = specs["get_trace"].return_values
+    assert [(v.unit, v.items.unit if v.items else None) for v in trace] == [("V", "V")]
+    pairs = specs["get_pairs"]
+    assert [(v.unit, v.items.unit if v.items else None) for v in pairs.return_values] == [("Hz", "Hz"), ("V", "V")]
+    assert pairs.labels == {"frequency": "Frequency", "voltage": "Voltage"}
+
+    class Spectrum(EmptyDevice):
+        Frequencies = Annotated[npt.NDArray[Any], Elements(Hertz)]
+        Powers = Annotated[npt.NDArray[Any], Elements(RfPower)]
+
+        @command(returns=("frequency", "power"))
+        def get_spectrum(self) -> tuple[Frequencies, Powers]:
+            """Read a spectrum as two arrays."""
+            return np.zeros(2), np.zeros(2)
+
+    spectrum = {spec.name: spec for spec in describe_commands(Spectrum())}["get_spectrum"]
+    assert [v.unit for v in spectrum.return_values] == ["Hz", "dBm"]
+    assert spectrum.labels == {"frequency": "Frequency", "power": "RF power"}
+
+
+def test_a_tuple_of_fixed_length_is_checked_member_by_member() -> None:
+    """Each member of tuple[A, B] is checked against its own annotation, also inside a list and an array of rows."""
+
+    class Points(EmptyDevice):
+        Point = tuple[Hertz, Annotated[Volts, Range(0.0, 5.0)]]
+
+        @command
+        def set_point(self, point: Point) -> None:
+            """Set one point."""
+            self.point = point
+
+        @command
+        def set_points(self, points: list[Point]) -> None:
+            """Set a list of points."""
+            self.points = points
+
+    device = Points()
+    device.set_point(("1e3", 2))  # type: ignore[arg-type]
+    assert device.point == (1000.0, 2.0)
+    with pytest.raises(ValueError, match=r"set_point: point\[1\] 9\.0 is outside 0(\.0)? \.\.\. 5(\.0)? V\."):
+        device.set_point((1.0, 9.0))
+    with pytest.raises(ValueError, match="has 3 values, not 2"):
+        device.set_point((1.0, 2.0, 3.0))  # type: ignore[arg-type]
+    device.set_points([[10, "1.5"], (20, 2)])  # type: ignore[list-item]
+    assert device.points == [[10.0, 1.5], (20.0, 2.0)]
+    with pytest.raises(ValueError, match=r"points\[1\]\[1\] 7\.0 is outside"):
+        device.set_points([(1.0, 1.0), (2.0, 7.0)])
+
+    class Table(EmptyDevice):
+        Rows = Annotated[npt.NDArray[Any], Elements(Points.Point)]
+
+        @command
+        def set_rows(self, rows: Rows) -> None:
+            """Set an array of rows."""
+            self.rows = rows
+
+    table = Table()
+    rows = np.array([[1.0, 1.0], [2.0, 3.0]])
+    table.set_rows(rows)
+    assert table.rows is rows
+    with pytest.raises(ValueError, match=r"rows\[1\]\[1\] 8\.0 is outside"):
+        table.set_rows(np.array([[1.0, 1.0], [2.0, 8.0]]))
+    with pytest.raises(ValueError, match="is no array of rows"):
+        table.set_rows(np.array(5.0))
+
+
+def test_an_empty_tuple_has_no_members_and_a_bare_tuple_says_nothing() -> None:
+    """tuple[()] takes only an empty tuple and answers nothing; a bare typing.Tuple leaves its members unchecked."""
+    empty = commands.value_spec(tuple[()])
+    assert empty.members == ()
+    assert commands.check_value("set_nothing", "empty", (), empty) == ()
+    with pytest.raises(ValueError, match="has 1 values, not 0"):
+        commands.check_value("set_nothing", "empty", (1,), empty)
+    assert commands._return_values(tuple[()]) == ()  # the answers of a command
+    assert commands.value_spec(typing.Tuple).members is None  # noqa: UP006  # the bare alias on purpose
 
 
 def test_command_refuses_what_cannot_be_called_by_name() -> None:
@@ -817,7 +1002,6 @@ def test_a_numeric_choice_keeps_its_range() -> None:
 
 def test_an_array_whose_elements_need_converting_is_refused() -> None:
     """An array is handed on as it is, so an array of texts for numbers is refused instead of passed on unconverted."""
-    np = pytest.importorskip("numpy")
 
     class Levels(EmptyDevice):
         @command
@@ -827,12 +1011,28 @@ def test_an_array_whose_elements_need_converting_is_refused() -> None:
 
     device = Levels()
     numbers_array = np.array([1, 2])
-    device.set_levels(numbers_array)
-    assert device.levels is numbers_array
+    device.set_levels(numbers_array)  # type: ignore[arg-type]
+    assert device.levels is numbers_array  # type: ignore[comparison-overlap]
+    with_nan = np.array([1.0, np.nan])
+    device.set_levels(with_nan)  # type: ignore[arg-type]
+    assert device.levels is with_nan  # type: ignore[comparison-overlap]  # NaN is unchanged, as a scalar is
     with pytest.raises(ValueError, match=r"levels\[0\] '1\.5' would need converting"):
-        device.set_levels(np.array(["1.5", "2.0"]))
+        device.set_levels(np.array(["1.5", "2.0"]))  # type: ignore[arg-type]
     device.set_levels(["1.5", "2.0"])  # type: ignore[list-item]
     assert device.levels == [1.5, 2.0]
+
+    class Mask(EmptyDevice):
+        @command
+        def set_mask(self, mask: list[bool]) -> None:
+            """Set the mask."""
+            self.mask = mask
+
+    mask = Mask()
+    flags = np.array([True, False])
+    mask.set_mask(flags)  # type: ignore[arg-type]
+    assert mask.mask is flags  # type: ignore[comparison-overlap]
+    with pytest.raises(ValueError, match=r"mask\[0\] 1 would need converting"):  # True == 1, but no bool
+        mask.set_mask(np.array([1, 0]))  # type: ignore[arg-type]
 
 
 def test_a_positional_only_parameter_is_refused() -> None:
@@ -1311,7 +1511,8 @@ def test_a_driver_without_command_is_not_checked_at_class_creation(monkeypatch: 
         "check_command_overrides",
         "check_selector_defaults",
         "check_selector_overlaps",
-        "complete_hazard_sections",
+        "check_value_markers",
+        "complete_warning_sections",
         "prepare_stateful_selectors",
     ):
         monkeypatch.setattr(commands, check, refuse)

@@ -34,6 +34,13 @@ written on the value with standard Python annotations, and everything of it is i
     def set_voltage(self, channel: int, voltage: Annotated[Volts, Range(-20.0, 20.0)]) -> None:
         ...
 
+A unit, label or range belongs to a single value, never to a list, tuple or array: a sequence says it with its element
+type (`list[Volts]`, `list[tuple[Hertz, Volts]]`), and an array, which has none, with `Elements(Hertz)`.
+
+Aliases are defined above the driver class, at module level or in the class body before the commands that use them.
+The annotations are checked when the class is created, and an alias defined below the class does not exist yet then:
+a marker in the wrong place (a Unit on a list) would go unnoticed.
+
 `@command` marks the method as a command and checks its arguments on every call against these annotations.
 `describe_commands` reads the commands of a driver instance for SweepMe!, Instrument Control and scripts alike.
 """
@@ -79,6 +86,7 @@ __all__ = [
     "CommandError",
     "CommandInfo",
     "CommandSpec",
+    "Elements",
     "Label",
     "ParameterSpec",
     "Range",
@@ -140,6 +148,19 @@ class Label:
     text: str
 
 
+@dataclass(frozen=True)
+class Elements:
+    """The annotation of each element of an array, which has no element type of its own to carry it.
+
+    `Annotated[np.ndarray, Elements(Hertz)]` is an array of frequencies; `Elements(tuple[Hertz, Volts])` an array whose
+    rows are a frequency and a voltage. A list or tuple says the same with its element type (`list[Hertz]`). A Unit,
+    Label or Range written on the array itself is refused when the driver is loaded: it would leave open whether it
+    means the whole value or each element.
+    """
+
+    hint: Any
+
+
 @dataclass(frozen=True, kw_only=True)
 class Selector:
     """Marks a parameter that addresses a part of the instrument - a channel, a slot, a pin - rather than a value.
@@ -151,7 +172,8 @@ class Selector:
 
     `Selector(stateful=True)` marks a selector the instrument keeps as a selection (`INST:OUT2`, then `VOLT 5`). The
     driver selects it in `apply_selectors`, and @command calls that only when the selection changes; the selection is
-    remembered on the Port, so every driver instance on it knows it.
+    remembered per selection scope (the Port, or the driver's `selection_scope()`), so every driver instance on that
+    connection knows it.
 
     `Selector(overlaps={"TRACK25V": ("+25V", "-25V")})` names values that reach the same hardware as other values
     (tracking drives both 25 V outputs; on a LabJack T4, AIN4 is FIO4). The relation is symmetric and not transitive:
@@ -230,7 +252,7 @@ class CommandInfo:
     returns: tuple[str, ...] | None = None
     reads: str | None = None
     composite: bool = False
-    hazards: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
     kind: str = ""
     """The kind when decorated: "read" (a return annotation other than None) or "run" (stated with kind="run").
 
@@ -247,10 +269,14 @@ class ValueSpec:
     optional: bool = False
     choices: tuple[Any, ...] | None = None
     unit: str | None = None
+    """The unit of the value; for a sequence of single values (`list[Volts]`, `Elements(Hertz)`) that of each one."""
     label: str | None = None
+    """The label of the value; for a sequence of single values that of each element, like the unit."""
     range: Range | None = None
     items: ValueSpec | None = None
-    """For a list, a variadic tuple or a Sequence: the spec of each element (`list[Literal["AIN0", "AIN1"]]`)."""
+    """For a list, a variadic tuple, a Sequence or an array with Elements: the spec of each element (`list[Volts]`)."""
+    members: tuple[ValueSpec, ...] | None = None
+    """For a tuple of fixed length: the spec of each member, in order (`tuple[Hertz, Volts]`)."""
     selector: bool = False
     """Marked Selector(): the value addresses a part of the instrument."""
     stateful: bool = False
@@ -284,7 +310,7 @@ class CommandSpec:
 
     name: str
     description: str
-    hazards: tuple[str, ...]
+    warnings: tuple[str, ...]
     parameters: tuple[ParameterSpec, ...]
     kind: str
     returns: tuple[str, ...]
@@ -295,7 +321,7 @@ class CommandSpec:
     quantity: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
     calls: tuple[str, ...] = ()
-    """For a composite: the commands it calls, read from its code (hazards then holds theirs as well)."""
+    """For a composite: the commands it calls, read from its code (warnings then holds theirs as well)."""
     selectors: tuple[str, ...] = ()
     """The names of the parameters that are selectors, in signature order."""
 
@@ -309,11 +335,12 @@ def _is_union(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
 
 
 def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
-    """Split an annotation into type, Literal choices and the Unit, Label, Range and Selector markers."""
+    """Split an annotation into type, Literal choices, elements or members, and the Unit, Label, Range and Selector."""
     unit = label = None
     value_range = None
     selector = stateful = False
     overlaps: Overlaps | str | None = None
+    elements: Any = None
     if get_origin(hint) is Annotated:
         hint, *metadata = get_args(hint)
         for item in metadata:
@@ -323,6 +350,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label = item.text
             elif isinstance(item, Range):
                 value_range = item
+            elif isinstance(item, Elements):
+                elements = item.hint
             elif isinstance(item, Selector):
                 # kept as pairs by Selector.__post_init__
                 selector, stateful, overlaps = True, item.stateful, cast("Overlaps | str | None", item.overlaps)
@@ -331,7 +360,8 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
         members = [m for m in get_args(hint) if m is not type(None)]
         optional = len(members) < len(get_args(hint))
         if len(members) == 1:
-            inner = value_spec(members[0])
+            # Elements of an optional array describe the array, as they do without None.
+            inner = value_spec(members[0] if elements is None else Annotated[members[0], Elements(elements)])
             return ValueSpec(
                 type=inner.type,
                 optional=optional,
@@ -340,20 +370,24 @@ def value_spec(hint: Any) -> ValueSpec:  # noqa: ANN401  # any annotation object
                 label=label or inner.label,
                 range=value_range or inner.range,
                 items=inner.items,
+                members=inner.members,
                 selector=selector or inner.selector,
                 stateful=stateful or inner.stateful,
                 overlaps=overlaps if overlaps is not None else inner.overlaps,
             )
         hint = None
     choices = tuple(get_args(hint)) if get_origin(hint) is Literal else None
+    items = value_spec(elements) if elements is not None else _item_spec(hint)
     return ValueSpec(
         type=None if choices is not None else hint,
         optional=optional,
         choices=choices,
-        unit=unit,
-        label=label,
+        # A sequence of single values is in the unit of its elements: the unit of the quantity it is a series of.
+        unit=unit or (items.unit if items is not None else None),
+        label=label or (items.label if items is not None else None),
         range=value_range,
-        items=_item_spec(hint),
+        items=items,
+        members=_member_specs(hint),
         selector=selector,
         stateful=stateful,
         overlaps=overlaps,
@@ -372,6 +406,65 @@ def _item_spec(hint: Any) -> ValueSpec | None:  # noqa: ANN401  # any annotation
     if get_origin(hint) is tuple:
         return value_spec(members[0]) if len(members) == 2 and members[1] is Ellipsis else None  # noqa: PLR2004
     return value_spec(members[0]) if len(members) == 1 else None
+
+
+def _member_specs(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  # any annotation object
+    """The spec of each member of a tuple of fixed length, `tuple[Hertz, Volts]`; None for anything else."""
+    if get_origin(hint) is not tuple:
+        return None
+    members = get_args(hint)
+    # A bare typing.Tuple has no __args__ and says nothing of its members; tuple[()] has none.
+    if members[-1:] == (Ellipsis,) or (not members and getattr(hint, "__args__", None) != ()):
+        return None
+    return tuple(value_spec(member) for member in members)
+
+
+def _is_array(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
+    """Whether an annotation is a NumPy array or a subclass of one, recognized without importing NumPy."""
+    origin = get_origin(hint) or hint
+    classes = getattr(origin, "__mro__", (origin,))
+    return any(
+        getattr(cls, "__module__", "") == "numpy" and getattr(cls, "__name__", "") == "ndarray" for cls in classes
+    )
+
+
+def _is_container(hint: Any) -> bool:  # noqa: ANN401  # any annotation object
+    """Whether an annotation is a list, tuple, Sequence or array: something that holds values rather than is one."""
+    return (get_origin(hint) or hint) in SEQUENCE_ORIGINS or _is_array(hint)
+
+
+def _misplaced_marker(hint: Any) -> str | None:  # noqa: ANN401  # any annotation object
+    """What is wrong with the first misplaced marker anywhere in an annotation, as text; None if none is.
+
+    A Unit, Label or Range is misplaced on a container, Elements on anything but an array; an optional value counts as
+    the value it holds (`list[float] | None` is a list).
+    """
+    if get_origin(hint) is Annotated:
+        base, *metadata = get_args(hint)
+        values = [member for member in get_args(base) if member is not type(None)] if _is_union(base) else [base]
+        markers = [item for item in metadata if isinstance(item, (Unit, Label, Range))]
+        if markers and any(_is_container(value) for value in values):
+            return (
+                f"{markers[0]!r} on a list, tuple or array - a unit, label or range belongs to a single value: write "
+                f"it on the element type (list[Volts], list[tuple[Hertz, Volts]]), and for an array use "
+                f"Annotated[np.ndarray, Elements(Hertz)]."
+            )
+        elements = [item for item in metadata if isinstance(item, Elements)]
+        if elements and not all(_is_array(value) for value in values):
+            return (
+                f"{elements[0]!r} on something that is no array - Elements describes the elements of an array, which "
+                f"has no element type; a list or tuple names its own (list[Hertz])."
+            )
+        inner = [base] + [item.hint for item in elements]
+    elif get_origin(hint) is Literal:
+        return None
+    else:
+        inner = list(get_args(hint))
+    for part in inner:
+        found = _misplaced_marker(part)
+        if found is not None:
+            return found
+    return None
 
 
 def _defining_namespace(owner: type, func: Callable[..., Any]) -> dict[str, Any] | None:
@@ -500,12 +593,19 @@ def _near_choice(value: object, choices: tuple[Any, ...]) -> str:
     return f" Did you mean {near[0]!r}?" if len(near) == 1 else ""
 
 
-def check_value(command_name: str, parameter: str, value: object, spec: ValueSpec) -> Any:  # noqa: ANN401
+def check_value(  # noqa: PLR0911  # one return per kind of value
+    command_name: str,
+    parameter: str,
+    value: object,
+    spec: ValueSpec,
+) -> Any:  # noqa: ANN401  # the checked value, of whatever type it came as
     """Check and convert one argument against its annotation; raise ValueError if it does not fit."""
     if value is None and spec.optional:
         return None
     if spec.items is not None:
         return _check_items(command_name, parameter, value, spec.items)
+    if spec.members is not None:
+        return _check_members(command_name, parameter, value, spec.members)
     if spec.choices is not None:
         choice = _check_choice(command_name, parameter, value, spec.choices)
         _check_range(command_name, parameter, choice, spec)
@@ -546,7 +646,11 @@ def _check_choice(command_name: str, parameter: str, value: object, choices: tup
 def _checks_something(spec: ValueSpec) -> bool:
     """Whether check_value would check or convert anything for this spec."""
     return (
-        spec.choices is not None or spec.type in (bool, int, float) or spec.range is not None or spec.items is not None
+        spec.choices is not None
+        or spec.type in (bool, int, float)
+        or spec.range is not None
+        or spec.items is not None
+        or spec.members is not None
     )
 
 
@@ -554,16 +658,19 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
     """Check every element of a list argument; a list or tuple comes back converted.
 
     A NumPy array is handed on as it is, so an element that would need converting (an array of texts for a number) is
-    refused rather than passed on unconverted; pysweepme does not import NumPy to build a converted one.
+    refused rather than passed on unconverted; pysweepme does not import NumPy to build a converted one. An array of
+    rows (Elements(tuple[...])) is checked row by row, any other array element by element.
     """
     if isinstance(value, (str, bytes)) or not (isinstance(value, (list, tuple)) or hasattr(value, "tolist")):
         raise _fail(command_name, parameter, value, "is not a list.")
     if not _checks_something(items):
         return value
     if not isinstance(value, (list, tuple)):
-        flat = value.ravel() if hasattr(value, "ravel") else value  # an array
+        if items.members is not None and getattr(value, "ndim", 1) == 0:
+            raise _fail(command_name, parameter, value, "is no array of rows.")
+        flat = value if items.members is not None or not hasattr(value, "ravel") else value.ravel()  # an array
         for index, item in enumerate(flat.tolist()):
-            if check_value(command_name, f"{parameter}[{index}]", item, items) != item:
+            if not _unchanged(check_value(command_name, f"{parameter}[{index}]", item, items), item):
                 raise _fail(
                     command_name,
                     f"{parameter}[{index}]",
@@ -572,6 +679,33 @@ def _check_items(command_name: str, parameter: str, value: object, items: ValueS
                 )
         return value
     checked = [check_value(command_name, f"{parameter}[{index}]", item, items) for index, item in enumerate(value)]
+    return tuple(checked) if isinstance(value, tuple) else checked
+
+
+def _unchanged(checked: object, item: object) -> bool:
+    """Whether checking left an array element as it was: equal (NaN as NaN), a bool only where it was one."""
+    if isinstance(checked, list) and isinstance(item, list):  # a row
+        return len(checked) == len(item) and all(_unchanged(c, i) for c, i in zip(checked, item, strict=True))
+    if isinstance(checked, float) and isinstance(item, float) and math.isnan(checked) and math.isnan(item):
+        return True  # NaN equals nothing, not even itself
+    return checked == item and isinstance(checked, bool) == isinstance(item, bool)
+
+
+def _check_members(
+    command_name: str,
+    parameter: str,
+    value: object,
+    members: tuple[ValueSpec, ...],
+) -> Any:  # noqa: ANN401  # the checked value, of whatever type it came as
+    """Check a tuple of fixed length member by member; it comes back converted, as a list where it came as one."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise _fail(command_name, parameter, value, f"is not a tuple of {len(members)} values.")
+    if len(value) != len(members):
+        raise _fail(command_name, parameter, value, f"has {len(value)} values, not {len(members)}.")
+    checked = [
+        check_value(command_name, f"{parameter}[{index}]", item, member)
+        for index, (item, member) in enumerate(zip(value, members, strict=True))
+    ]
     return tuple(checked) if isinstance(value, tuple) else checked
 
 
@@ -632,7 +766,7 @@ def command(
     returns: Sequence[str] | None = None,
     reads: str | None = None,
     composite: bool = False,
-    hazards: str | Sequence[str] | None = None,
+    warnings: str | Sequence[str] | None = None,
     kind: str | None = None,
 ) -> Callable[[F], F]: ...
 
@@ -644,7 +778,7 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
     returns: Sequence[str] | None = None,
     reads: str | None = None,
     composite: bool = False,
-    hazards: str | Sequence[str] | None = None,
+    warnings: str | Sequence[str] | None = None,
     kind: str | None = None,
 ) -> F | Callable[[F], F]:
     """Mark a driver method as a communication command and check its arguments on every call.
@@ -663,8 +797,8 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
             whether or not the instrument also measures it) or "state" (a status or an identity, which no command
             sets).
         composite: True for a higher-level function that calls other commands, not one instrument command.
-        hazards: What can go wrong when the command is called, in plain text: one string, or one string per hazard.
-            They are appended to the docstring as a "Hazards:" section, so that help() shows them.
+        warnings: What can go wrong when the command is called, in plain text: one string, or one string per warning.
+            They are appended to the docstring as a "Warnings:" section, so that help() shows them.
         kind: "run" for an action that takes parameters, e.g. start_stream(pins, scan_rate): the signature alone
             would make it a setter. Not allowed for a reader. Without it, a command that takes a value sets and one
             that takes none runs.
@@ -691,12 +825,12 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         returns=tuple(returns) if returns is not None else None,
         reads=reads,
         composite=bool(composite),
-        hazards=_hazards(hazards),
+        warnings=_warnings(warnings),
         kind=kind or "",
     )
 
     def decorate(method: F) -> F:
-        """Check the declaration, wrap the method, attach the metadata and show the hazards in the docstring."""
+        """Check the declaration, wrap the method, attach the metadata and show the warnings in the docstring."""
         if isinstance(method, (staticmethod, classmethod, property)):
             msg = (
                 f"@command {type(method).__name__}: a command is a plain instance method (def name(self, ...)), "
@@ -706,8 +840,8 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
         info = _completed(method, declared)
         wrapped = _checked(method)
         setattr(wrapped, COMMAND_ATTRIBUTE, info)
-        if info.hazards:
-            wrapped.__doc__ = _with_hazards(method.__doc__, info.hazards)
+        if info.warnings:
+            wrapped.__doc__ = _with_warnings(method.__doc__, info.warnings)
         return wrapped
 
     if func is not None:
@@ -785,21 +919,21 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     return declared  # kind "run" if stated, else set or run by its parameters, decided by describe_command
 
 
-def _hazards(hazards: str | Sequence[str] | None) -> tuple[str, ...]:
-    """The hazards as a tuple of non-empty texts; refuse anything that is not text."""
-    if hazards is None:
+def _warnings(warnings: str | Sequence[str] | None) -> tuple[str, ...]:
+    """The warnings as a tuple of non-empty texts; refuse anything that is not text."""
+    if warnings is None:
         return ()
-    items = (hazards,) if isinstance(hazards, str) else tuple(hazards)
+    items = (warnings,) if isinstance(warnings, str) else tuple(warnings)
     if not all(isinstance(item, str) for item in items):
-        msg = "@command hazards must be a text or a sequence of texts."
+        msg = "@command warnings must be a text or a sequence of texts."
         raise TypeError(msg)
     return tuple(text for item in items if (text := " ".join(item.split())))
 
 
-def _with_hazards(doc: str | None, hazards: Sequence[str]) -> str:
-    """A docstring with the hazards as a "Hazards:" section at its end, so that help() shows them."""
-    section = "\n".join(f"    {hazard}" for hazard in hazards)
-    return f"{inspect.cleandoc(doc or '')}\n\nHazards:\n{section}".lstrip()
+def _with_warnings(doc: str | None, warnings: Sequence[str]) -> str:
+    """A docstring with the warnings as a "Warnings:" section at its end, so that help() shows them."""
+    section = "\n".join(f"    {warning}" for warning in warnings)
+    return f"{inspect.cleandoc(doc or '')}\n\nWarnings:\n{section}".lstrip()
 
 
 def command_info(method: object) -> CommandInfo | None:
@@ -885,27 +1019,27 @@ def calls_of(cls: type, name: str) -> tuple[str, ...]:
     return known[name]
 
 
-def _hazard_origins(cls: type, name: str, stack: frozenset[str]) -> list[tuple[str, str]]:
-    """(command, hazard) for a command's own hazards and, for a composite, those of every command it calls."""
+def _warning_origins(cls: type, name: str, stack: frozenset[str]) -> list[tuple[str, str]]:
+    """(command, warning) for a command's own warnings and, for a composite, those of every command it calls."""
     info = command_info(getattr(cls, name, None))
     if info is None:
         return []
-    pairs = [(name, hazard) for hazard in info.hazards]
+    pairs = [(name, warning) for warning in info.warnings]
     if info.composite:
         for called in calls_of(cls, name):
             if called in stack:
                 continue  # a cycle: what it brings is already being collected
-            for pair in _hazard_origins(cls, called, stack | {called}):
+            for pair in _warning_origins(cls, called, stack | {called}):
                 if pair not in pairs:
                     pairs.append(pair)
     return pairs
 
 
-def hazards_of(cls: type, name: str) -> tuple[str, ...]:
-    """A command's hazards: its own, then those a composite inherits, each prefixed with the command it comes from."""
+def warnings_of(cls: type, name: str) -> tuple[str, ...]:
+    """A command's warnings: its own, then those a composite inherits, each prefixed with the command it comes from."""
     return tuple(
-        hazard if origin == name else f"{origin}: {hazard}"
-        for origin, hazard in _hazard_origins(cls, name, frozenset({name}))
+        warning if origin == name else f"{origin}: {warning}"
+        for origin, warning in _warning_origins(cls, name, frozenset({name}))
     )
 
 
@@ -932,6 +1066,26 @@ def check_selector_defaults(cls: type) -> None:
                     f"would silently address whichever {parameter.name} the default names."
                 )
                 raise TypeError(msg)
+
+
+def check_value_markers(cls: type) -> None:
+    """Refuse a Unit, Label or Range on a list, tuple, Sequence or array, and Elements on anything but an array.
+
+    On a container a unit leaves open whether it means the whole value or each element, and a list of pairs could not
+    say it at all. The single value carries it: `list[Volts]`, `list[tuple[Hertz, Volts]]`, and an array, which has no
+    element type, `Annotated[np.ndarray, Elements(Hertz)]`. Elements on anything else would replace the check of the
+    value itself. Applies to the commands the driver class defines; called by EmptyDevice.__init_subclass__.
+    """
+    for name, member in vars(cls).items():
+        if command_info(member) is None:
+            continue
+        for parameter, hint in _hints(inspect.unwrap(member), dict(vars(cls))).items():
+            problem = _misplaced_marker(hint)
+            if problem is None:
+                continue
+            what = "its return value" if parameter == "return" else parameter
+            msg = f"@command {name}: {what} has {problem}"
+            raise TypeError(msg)
 
 
 # --- selections kept by the instrument ----------------------------------------------------------------------------
@@ -1227,8 +1381,8 @@ def check_command_overrides(cls: type) -> None:
                 break
 
 
-def complete_hazard_sections(cls: type) -> None:
-    """Show the inherited hazards in the docstrings of the composites a driver class defines.
+def complete_warning_sections(cls: type) -> None:
+    """Show the inherited warnings in the docstrings of the composites a driver class defines.
 
     Called by EmptyDevice.__init_subclass__: only once the class body ran are the commands a composite calls there.
     """
@@ -1236,9 +1390,9 @@ def complete_hazard_sections(cls: type) -> None:
         info = command_info(member)
         if info is None or not info.composite:
             continue
-        hazards = hazards_of(cls, name)
-        if hazards != info.hazards:
-            member.__doc__ = _with_hazards(inspect.unwrap(member).__doc__, hazards)
+        warnings = warnings_of(cls, name)
+        if warnings != info.warnings:
+            member.__doc__ = _with_warnings(inspect.unwrap(member).__doc__, warnings)
 
 
 # --- describe_commands -------------------------------------------------------------------------------------------
@@ -1277,17 +1431,23 @@ def _quantity_of_name(name: str) -> str:
 
 
 def _return_values(hint: Any) -> tuple[ValueSpec, ...] | None:  # noqa: ANN401  # any annotation object
-    """The value specs of what a command answers; () for -> None, None where it is not annotated."""
+    """The value specs of what a command answers, one per quantity; () for -> None, None where it is not annotated.
+
+    A tuple of fixed length answers one quantity per member (`tuple[Volts, Amperes]`), a series of such tuples one
+    series per member (`list[tuple[Hertz, Volts]]`, an array with `Elements(tuple[Hertz, Volts])`): each in the unit
+    and with the label of its member.
+    """
     if hint is None or hint is type(None):
         return ()
-    spec_hint = hint
-    if get_origin(spec_hint) is Annotated:
-        spec_hint = get_args(spec_hint)[0]
-    if get_origin(spec_hint) is tuple:
-        members = get_args(spec_hint)
-        if members and members[-1] is not Ellipsis:
-            return tuple(value_spec(m) for m in members)
-    return (value_spec(hint),)
+    spec = value_spec(hint)
+    if spec.members is not None:
+        return spec.members
+    rows = spec.items.members if spec.items is not None else None
+    if rows is not None:
+        return tuple(
+            replace(spec, items=member, unit=member.unit, label=member.label, range=member.range) for member in rows
+        )
+    return (spec,)
 
 
 def _guess_returns(name: str, count: int) -> tuple[str, ...]:
@@ -1385,7 +1545,7 @@ def describe_command(device: EmptyDevice, name: str) -> CommandSpec | None:  # n
     return CommandSpec(
         name=name,
         description=description,
-        hazards=hazards_of(type(device), name) if info else (),
+        warnings=warnings_of(type(device), name) if info else (),
         parameters=tuple(parameters),
         kind=kind,
         returns=returns,
