@@ -64,11 +64,13 @@ class EmptyDevice:
             complete_warning_sections,
             declares_commands,
             prepare_stateful_selectors,
+            report_unresolved_annotations,
         )
 
         # A driver without @command is not checked at all: a check added later cannot keep it from loading
         if not declares_commands(cls):
             return
+        report_unresolved_annotations(cls)
         check_command_overrides(cls)
         check_selector_defaults(cls)
         check_selector_overlaps(cls)
