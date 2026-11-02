@@ -304,6 +304,16 @@ def test_a_text_choice_must_be_written_exactly() -> None:
     assert len(device.calls) == calls
 
 
+def test_a_numpy_text_is_a_text_choice() -> None:
+    """NumPy's str_, as taken from an array of names, matches a text choice and arrives as the choice itself."""
+    device = Declared()
+    device.set_source_mode(1, np.str_("FIMV"))  # type: ignore[arg-type]
+    assert device.calls[-1] == ("set_source_mode", (1, "FIMV"))
+    assert type(device.calls[-1][1][1]) is str
+    with pytest.raises(ValueError, match=r"mode np\.str_\('fimv'\) is not one of FVMI, FIMV\. Did you mean 'FIMV'\?"):
+        device.set_source_mode(1, np.str_("fimv"))  # type: ignore[arg-type]
+
+
 def test_choices_that_differ_only_in_case_stay_apart() -> None:
     """Two modes that differ only in case are two choices, and each arrives as written."""
 
