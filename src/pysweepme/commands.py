@@ -72,6 +72,8 @@ from typing import (
     overload,
 )
 
+from .ErrorMessage import debug
+
 if sys.version_info >= (3, 14):
     # Annotations are evaluated lazily from Python 3.14 on; a version check rather than try/except ImportError, so
     # that type checkers for older Pythons skip what they cannot know.
@@ -481,12 +483,17 @@ def _defining_namespace(owner: type, func: Callable[..., Any]) -> dict[str, Any]
     return None
 
 
-def _hints(func: Callable[..., Any], localns: dict[str, Any] | None = None) -> dict[str, Any]:
+def _hints(
+    func: Callable[..., Any],
+    localns: dict[str, Any] | None = None,
+    unresolved: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Resolved annotations of a function, Annotated kept; an annotation that cannot be resolved is left out.
 
     Each annotation is resolved on its own: a name a driver imports only for type checkers (if TYPE_CHECKING:)
     leaves that one annotation unchecked, but must not take the checks, units and choices of the others with it.
     `localns` is the namespace of the class that defines the method (_defining_namespace), for class-local aliases.
+    `unresolved`, where given, receives why each left-out annotation could not be resolved, by parameter name.
     """
     globalns = getattr(inspect.unwrap(func), "__globals__", None)
     if sys.version_info >= (3, 14):
@@ -504,8 +511,9 @@ def _hints(func: Callable[..., Any], localns: dict[str, Any] | None = None) -> d
         try:
             hints.update(get_type_hints(single, globalns=globalns, localns=localns, include_extras=True))
         # A driver must load even if a name in one annotation cannot be resolved.
-        except Exception:  # noqa: BLE001, S112
-            continue
+        except Exception as exc:  # noqa: BLE001
+            if unresolved is not None:
+                unresolved[name] = f"{type(exc).__name__}: {exc}"
     return hints
 
 
@@ -1107,6 +1115,26 @@ def check_value_markers(cls: type) -> None:
             what = "its return value" if parameter == "return" else parameter
             msg = f"@command {name}: {what} has {problem}"
             raise TypeError(msg)
+
+
+def report_unresolved_annotations(cls: type) -> None:
+    """Write a debug line for each annotation of a command the driver class defines that cannot be resolved.
+
+    Such a parameter is neither checked nor typed in the description. That is right for a name imported only for type
+    checkers (if TYPE_CHECKING:), so the driver still loads; a misspelled alias would otherwise go unnoticed. Called
+    by EmptyDevice.__init_subclass__, when the aliases resolve.
+    """
+    for name, member in vars(cls).items():
+        if command_info(member) is None:
+            continue
+        unresolved: dict[str, str] = {}
+        _hints(inspect.unwrap(member), dict(vars(cls)), unresolved)
+        for parameter, reason in unresolved.items():
+            what = "the return annotation" if parameter == "return" else f"the annotation of {parameter}"
+            debug(
+                f"@command {cls.__name__}.{name}: {what} cannot be resolved ({reason}); it is not checked and has no "
+                f"type in the description of the command.",
+            )
 
 
 def check_returns(cls: type) -> None:

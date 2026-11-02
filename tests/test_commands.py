@@ -531,6 +531,35 @@ def test_one_unresolvable_annotation_leaves_the_others_checked() -> None:
     assert (voltage.value.unit, voltage.value.range) == ("V", Range(0.0, 5.0))
 
 
+def test_an_unresolvable_annotation_is_reported_when_the_class_is_created(capsys: pytest.CaptureFixture[str]) -> None:
+    """A misspelled alias leaves its parameter unchecked: a debug line names it, and the driver still loads."""
+
+    class Misspelled(EmptyDevice):
+        @command
+        def set_level(self, level: Voltz, mode: SourceMode) -> None:  # type: ignore[name-defined]  # noqa: F821
+            """Set the level."""
+
+        @command(returns=("level",))
+        def get_level(self) -> Voltz:  # type: ignore[name-defined]  # noqa: F821
+            """Read the level."""
+            return 1.0
+
+    output = capsys.readouterr().out
+    assert "@command Misspelled.set_level: the annotation of level cannot be resolved (NameError:" in output
+    assert "'Voltz'" in output
+    assert "@command Misspelled.get_level: the return annotation cannot be resolved" in output
+    assert "mode" not in output
+    Misspelled().set_level("anything", "FVMI")
+
+    class Resolved(EmptyDevice):
+        @command
+        def set_level(self, level: Volts) -> None:
+            """Set the level."""
+
+    assert capsys.readouterr().out == ""
+    assert Resolved().set_level(1.0) is None
+
+
 def test_a_class_local_alias_is_checked_also_when_inherited() -> None:
     """A class-local Annotated alias in a deferred annotation is resolved from the class that defines the command.
 
