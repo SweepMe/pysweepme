@@ -567,10 +567,11 @@ def _match_choice(value: object, choices: tuple[Any, ...]) -> tuple[bool, Any]:
 
     Text is never adjusted - "fvmi" is not "FVMI" (decided 2026-10-27 after review: a clear error rather than a
     silent correction, and two modes may differ in case only). What is converted is the type: "2" or 2.0 stand for
-    the choice 2, and 2 for the choice "2".
+    the choice 2, and 2 for the choice "2". A subclass of str, such as NumPy's str_, is text like str itself.
     """
     for choice in choices:
-        if value == choice and type(value) is type(choice):
+        same_type = type(value) is type(choice) or (isinstance(value, str) and isinstance(choice, str))
+        if value == choice and same_type:
             return True, choice
     for choice in choices:
         if isinstance(choice, bool) or isinstance(value, bool):
