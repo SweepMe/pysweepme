@@ -399,6 +399,17 @@ def test_bool_and_optional_arguments() -> None:
     assert device.calls.pop() == ("set_offset", (1, 0.5))
 
 
+def test_a_numpy_bool_is_a_bool() -> None:
+    """NumPy's bool, as taken from an array of switches, arrives as a plain bool; it is still no number."""
+    device = Declared()
+    for given, expected in ((np.True_, True), (np.False_, False), (np.array([True])[0], True)):
+        device.set_output(1, given)  # type: ignore[arg-type]
+        assert device.calls[-1] == ("set_output", (1, expected))
+        assert type(device.calls[-1][1][1]) is bool
+    with pytest.raises(ValueError, match="is not a number"):
+        device.set_voltage(1, np.True_)  # type: ignore[arg-type]
+
+
 def test_keyword_arguments_are_checked() -> None:
     """Arguments passed by keyword are checked like positional ones."""
     device = Declared()
