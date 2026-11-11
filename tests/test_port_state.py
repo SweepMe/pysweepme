@@ -69,3 +69,22 @@ def test_listing_resources_keeps_open_ports(
     assert manager_with_ports.get_cached_port("COM5") is not None, "the open port is kept"
     assert manager_with_ports.get_cached_port("COM7") is None, "a closed port of a listed type is dropped as before"
     assert manager_with_ports.get_cached_port("GPIB0::8::INSTR") is not None, "other port types are left alone"
+
+
+def test_listing_usb_resources_treats_usbtmc_ports_as_usb(
+    manager_with_ports: PortManagerModule.PortManager,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Drivers ask for "USB", and a USBTMC port carries "USBTMC" as its type: both name the same ports.
+
+    The closed ports were compared with the name the driver used, so a closed USBTMC port was never dropped and its
+    next use got the old port object instead of a new one.
+    """
+    monkeypatch.setattr(Ports.port_types["USBTMC"], "find_resources", lambda: ["USB0::1::2::3::INSTR"])
+    manager_with_ports._ports["USB0::1::2::3::INSTR"] = cast("Port", _StandInPort(is_open=False, port_type="USBTMC"))
+    manager_with_ports._ports["USB0::4::5::6::INSTR"] = cast("Port", _StandInPort(is_open=True, port_type="USBTMC"))
+
+    assert manager_with_ports.get_resources_available(["USB"]) == ["USB0::1::2::3::INSTR"]
+
+    assert manager_with_ports.get_cached_port("USB0::1::2::3::INSTR") is None, "the closed USBTMC port is dropped"
+    assert manager_with_ports.get_cached_port("USB0::4::5::6::INSTR") is not None, "the open one is kept"

@@ -94,10 +94,11 @@ class PortManager:
         """
         port_list = []
 
-        for port_type in port_types:
-            if port_type == "USB":
-                port_type = "USBTMC"
+        # Drivers call the USBTMC port type "USB", while a port carries "USBTMC" as its type. Renamed once, so that
+        # both the search and the dropping of closed ports below use the name the ports carry.
+        searched_types = ["USBTMC" if port_type == "USB" else port_type for port_type in port_types]
 
+        for port_type in searched_types:
             if port_type in Ports.port_types:
                 resources = Ports.port_types[port_type].find_resources()
 
@@ -108,7 +109,7 @@ class PortManager:
         ports_to_delete = [
             resource
             for resource, port in self._ports.items()
-            if port.port_properties["type"] in port_types and not port.port_properties["open"]
+            if port.port_properties["type"] in searched_types and not port.port_properties["open"]
         ]
         for resource in ports_to_delete:
             del self._ports[resource]
