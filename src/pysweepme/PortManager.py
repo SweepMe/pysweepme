@@ -267,13 +267,20 @@ class PortManager:
         self._ports[resource].set_logging(state)
 
     def get_identification(self, resource: str) -> str:
-        """Returns identification string
+        """Returns identification string.
+
+        The port is left as it was found: a port that is open, e.g. for a driver, stays open, and a port opened for
+        the identification is closed again. The VISA resource manager stays open, because closing it ends the VISA
+        session of every port opened through it while those ports still count as open.
+
         Args:
             resource: str, resource name, e.g. "GPIB0::1::INSTR".
 
         Returns:
             str -> Identification string
         """
+        # Read before the port is created, as creating it opens it.
+        was_open = self.is_port_open(resource)
         if resource not in self._ports:
             port = Ports.get_port(resource)
             if not isinstance(port, Port):
@@ -281,10 +288,11 @@ class PortManager:
             self._ports[resource] = port
 
         self.open_port(resource)
-        identification = self._ports[resource].get_identification()
-        self._ports[resource].close()
-        self.close_resourcemanager()
-        return identification
+        try:
+            return self._ports[resource].get_identification()
+        finally:
+            if not was_open:
+                self.close_port(resource)
 
     def open_port(self, resource: str) -> None:
         """Opens port by resource name.

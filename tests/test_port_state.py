@@ -20,7 +20,20 @@ class _StandInPort:
 
     def __init__(self, *, is_open: bool, port_type: str = "COM") -> None:
         """Create the stand-in as an open or a closed port of the given type."""
-        self.port_properties = {"open": is_open, "type": port_type}
+        self.port_properties = {"open": is_open, "type": port_type, "clear": False}
+
+    def open(self) -> None:
+        """Open the port."""
+        self.port_properties["open"] = True
+
+    def close(self) -> None:
+        """Close the port."""
+        self.port_properties["open"] = False
+
+    def get_identification(self) -> str:
+        """Answer the identification request, which needs an open port."""
+        assert self.port_properties["open"], "identification asked on a closed port"
+        return "Maker,Model,123,1.0"
 
 
 @pytest.fixture
@@ -88,3 +101,52 @@ def test_listing_usb_resources_treats_usbtmc_ports_as_usb(
 
     assert manager_with_ports.get_cached_port("USB0::1::2::3::INSTR") is None, "the closed USBTMC port is dropped"
     assert manager_with_ports.get_cached_port("USB0::4::5::6::INSTR") is not None, "the open one is kept"
+
+
+@pytest.fixture
+def resource_manager_closes(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Record every closing of the VISA resource manager instead of closing it."""
+    closes: list[None] = []
+    monkeypatch.setattr(Ports, "close_resourcemanager", lambda: closes.append(None))
+    return closes
+
+
+def test_identifying_a_port_in_use_leaves_it_open(
+    manager_with_ports: PortManagerModule.PortManager,
+    resource_manager_closes: list[None],
+) -> None:
+    """A port that is open, e.g. for a driver, is still open after its identification was read.
+
+    The identification closed the port and the VISA resource manager, which ended the VISA session of every open port
+    while those ports still counted as open, so their next use failed.
+    """
+    assert manager_with_ports.get_identification("COM5") == "Maker,Model,123,1.0"
+
+    assert manager_with_ports.is_port_open("COM5") is True
+    assert resource_manager_closes == [], "closing the manager would end the sessions of the open ports"
+
+
+def test_identifying_a_closed_port_closes_it_again(
+    manager_with_ports: PortManagerModule.PortManager,
+    resource_manager_closes: list[None],
+) -> None:
+    """A port opened only for the identification is closed again, the resource manager is left open."""
+    assert manager_with_ports.get_identification("COM7") == "Maker,Model,123,1.0"
+
+    assert manager_with_ports.is_port_open("COM7") is False
+    assert resource_manager_closes == []
+
+
+def test_identifying_a_new_port_closes_it_again(
+    manager_with_ports: PortManagerModule.PortManager,
+    monkeypatch: pytest.MonkeyPatch,
+    resource_manager_closes: list[None],
+) -> None:
+    """A port created for the identification, which opens it, is closed again."""
+    monkeypatch.setattr(Ports, "get_port", lambda _resource: _StandInPort(is_open=True))
+    monkeypatch.setattr(PortManagerModule, "Port", _StandInPort)  # get_identification only accepts Port objects
+
+    assert manager_with_ports.get_identification("COM9") == "Maker,Model,123,1.0"
+
+    assert manager_with_ports.is_port_open("COM9") is False
+    assert resource_manager_closes == []
