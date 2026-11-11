@@ -122,8 +122,8 @@ measures it), or a state (a status or an identity, which no command sets).
 KINDS = ("run",)
 """What @command(kind=...) may state.
 
-An action whose parameters configure it, which the signature would take for a setter. Everything else follows from the
-signature.
+A run command whose parameters configure it, which the signature would take for a setter. Everything else follows from
+the signature.
 """
 
 TRUE_TEXTS = ("true", "1", "on", "yes")
@@ -814,21 +814,21 @@ def command(  # noqa: PLR0913  # the decorator's keywords are its API
 
     Use it bare (`@command`) or with arguments. Once one method of a driver has it, only decorated methods are
     commands. It must be the outermost decorator. Nothing is guessed from the method name: the method needs a return
-    annotation (-> None for a setter or an action), and a reader needs returns; otherwise a TypeError is raised when
-    the driver is loaded.
+    annotation (-> None for a setter or a run command), and a reader needs returns; otherwise a TypeError is raised
+    when the driver is loaded.
 
     Args:
         func: The method, when used bare.
         returns: Names of the answered values, in answer order: a quantity ("voltage", "current"), or for a state
             what it is ("identification",), ("trigger_status",). Required for every reader, also with reads="state";
-            not allowed for a setter or an action.
+            not allowed for a setter or a run command.
         reads: What a reader reads: "measurement" (the default), "last", "setpoint" (a value a command can set,
             whether or not the instrument also measures it) or "state" (a status or an identity, which no command
             sets).
         composite: True for a higher-level function that calls other commands, not one instrument command.
         warnings: What can go wrong when the command is called, in plain text: one string, or one string per warning.
             They are appended to the docstring as a "Warnings:" section, so that help() shows them.
-        kind: "run" for an action that takes parameters, e.g. start_stream(pins, scan_rate): the signature alone
+        kind: "run" for a run command that takes parameters, e.g. start_stream(pins, scan_rate): the signature alone
             would make it a setter. Not allowed for a reader. Without it, a command that takes a value sets and one
             that takes none runs.
 
@@ -927,7 +927,7 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
     _check_parameters(name, method)
     annotations = _raw_annotations(method)
     if "return" not in annotations:
-        msg = f"@command {name}: needs a return annotation, -> None for a setter or an action."
+        msg = f"@command {name}: needs a return annotation, -> None for a setter or a run command."
         raise TypeError(msg)
     reader = not _is_none_annotation(annotations["return"])
     if reader and not declared.returns:
@@ -941,7 +941,7 @@ def _completed(method: Callable[..., Any], declared: CommandInfo) -> CommandInfo
         msg = f"@command {name}: returns and reads are only for readers, and it is annotated -> None."
         raise TypeError(msg)
     if reader and declared.kind:
-        msg = f"@command {name}: kind={declared.kind!r} is for an action annotated -> None, not for a reader."
+        msg = f"@command {name}: kind={declared.kind!r} is for a run command annotated -> None, not for a reader."
         raise TypeError(msg)
     if reader:
         return replace(declared, kind="read", reads=declared.reads or "measurement")

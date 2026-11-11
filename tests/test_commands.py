@@ -642,7 +642,7 @@ def test_kinds_quantities_and_reads() -> None:
 
 
 def test_kind_run_for_an_action_with_parameters() -> None:
-    """kind="run" makes an action with parameters a run command; refused on a reader and for any other value."""
+    """kind="run" makes a command with parameters a run command; refused on a reader and for any other value."""
 
     class Streaming(EmptyDevice):
         @command(kind="run")
