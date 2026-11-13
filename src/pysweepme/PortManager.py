@@ -80,58 +80,39 @@ class PortManager:
     def clear_portmanager_dialog(self) -> None:
         """To be overwritten by PortManagerDialog."""
 
-    def get_resources_available(self, port_types: list[str], port_identification: list[str] | None = None) -> list[str]:
+    def get_resources_available(self, port_types: list[str]) -> list[str]:
         """Returns a list of resources for given port types.
 
-        Called by SweepMe! to get resources for GUI when using 'Find Ports'.
-        Attention: port identification is not properly implemented. Only works for USBTMC and if identification was
-        already retrieved beforehand
+        Called by SweepMe! to get resources for GUI when using 'Find Ports'. Closed ports of these types are dropped
+        from the cached ports, so that their next use creates them anew. Open ports are kept.
 
         Args:
             port_types: list of port types, e.g. ['COM', 'GPIB']
-            port_identification: list of identification strings
 
         Returns:
             List of resource strings
         """
         port_list = []
 
-        for port_type in port_types:
-            if port_type == "USB":
-                port_type = "USBTMC"
+        # Drivers call the USBTMC port type "USB", while a port carries "USBTMC" as its type. Renamed once, so that
+        # both the search and the dropping of closed ports below use the name the ports carry.
+        searched_types = ["USBTMC" if port_type == "USB" else port_type for port_type in port_types]
 
+        for port_type in searched_types:
             if port_type in Ports.port_types:
                 resources = Ports.port_types[port_type].find_resources()
 
                 port_list += resources
 
-        for port in self._ports:
-            if self._ports[port].port_properties["type"] in port_types:
-                self._ports[port].port_properties["active"] = False
-
-        # removing all inactive ports
-        ports_to_delete = []
-
-        for port in self._ports:
-            if self._ports[port].port_properties["type"] in port_types:
-                if self._ports[port].port_properties["active"] is False:
-                    ports_to_delete.append(port)
-
-        for port in ports_to_delete:
-            del self._ports[port]
-
-        # list all active ports of appropriate type
-        for port in self._ports:
-            _port_properties = self._ports[port].port_properties
-            if _port_properties["type"] in port_types:
-                if _port_properties["identification"] is not None and _port_properties["type"] in ["USB", "USBTMC"]:
-                    if port_identification is not None:
-                        for identification_string in port_identification:
-                            if identification_string in str(_port_properties["identification"]):
-                                port_list.append(str(_port_properties["resource"]))
-                                break
-                else:
-                    port_list.append(str(_port_properties["resource"]))
+        # An open port is in use, e.g. by a driver; dropping it would leave its connection open with nothing that can
+        # close it any more, blocking the port until the program ends.
+        ports_to_delete = [
+            resource
+            for resource, port in self._ports.items()
+            if port.port_properties["type"] in searched_types and not port.port_properties["open"]
+        ]
+        for resource in ports_to_delete:
+            del self._ports[resource]
 
         return port_list
 
@@ -220,6 +201,26 @@ class PortManager:
         if resource in self._ports:
             del self._ports[resource]
 
+    def is_port_open(self, resource: str) -> bool:
+        """Return whether ``resource`` is currently open through this PortManager, e.g. by a running driver.
+
+        Args:
+            resource: str, resource name, e.g. "COM1"
+        """
+        port = self._ports.get(resource)
+        return port is not None and port.port_properties.get("open") is True
+
+    def get_cached_port(self, resource: str) -> Port | None:
+        """Return the Port object for ``resource`` without creating or opening it, or None if there is none yet.
+
+        For observers such as a trace display, which need the object to subscribe to but must never open the port
+        themselves. Use get_port to obtain a port for communication.
+
+        Args:
+            resource: str, resource name, e.g. "COM1"
+        """
+        return self._ports.get(resource)
+
     @staticmethod
     def find_resources(port_types: list[str] | None = None) -> dict[str, list[str]]:
         """Finds resources for given port types. If no port types are given, all possible port types are searched for
@@ -266,13 +267,20 @@ class PortManager:
         self._ports[resource].set_logging(state)
 
     def get_identification(self, resource: str) -> str:
-        """Returns identification string
+        """Returns identification string.
+
+        The port is left as it was found: a port that is open, e.g. for a driver, stays open, and a port opened for
+        the identification is closed again. The VISA resource manager stays open, because closing it ends the VISA
+        session of every port opened through it while those ports still count as open.
+
         Args:
             resource: str, resource name, e.g. "GPIB0::1::INSTR".
 
         Returns:
             str -> Identification string
         """
+        # Read before the port is created, as creating it opens it.
+        was_open = self.is_port_open(resource)
         if resource not in self._ports:
             port = Ports.get_port(resource)
             if not isinstance(port, Port):
@@ -280,10 +288,11 @@ class PortManager:
             self._ports[resource] = port
 
         self.open_port(resource)
-        identification = self._ports[resource].get_identification()
-        self._ports[resource].close()
-        self.close_resourcemanager()
-        return identification
+        try:
+            return self._ports[resource].get_identification()
+        finally:
+            if not was_open:
+                self.close_port(resource)
 
     def open_port(self, resource: str) -> None:
         """Opens port by resource name.
